@@ -1,0 +1,14 @@
+{
+  "note": "Branch names are from the 'Aham Sankalp AP & TG' workbook. Codes are PLACEHOLDERS derived from the names; replace them with the real branch codes (then update the rows via the admin web Organization > Branches page). Coordinates are not known and are left empty.",
+  "branches": [
+    {"name": "Nellore", "code": "NLR"},
+    {"name": "Guntur", "code": "GNT"},
+    {"name": "Vijayawada", "code": "VJA"},
+    {"name": "Rajahmundry", "code": "RJY"},
+    {"name": "Anakapalli", "code": "AKP"},
+    {"name": "Visakhapatnam", "code": "VSKP"},
+    {"name": "LB Nagar", "code": "LBN"},
+    {"name": "Warangal", "code": "WGL"},
+    {"name": "Siddipet", "code": "SDPT"}
+  ]
+}

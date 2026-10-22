@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+data/
+node_modules/
+dist/
+build/
+.dart_tool/
+*.log
+.storage/
+
+.env.prod
+backups/
+
+.env.local

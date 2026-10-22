@@ -1,0 +1,184 @@
+{
+  "source_workbook": "Aham Sankalp AP & TG Created 16_04_26 2.15.59 PM.xlsx",
+  "source_sheet": "Form Responses 1",
+  "note": "Header row only (36 columns, no responses, no dropdown options). status: mapped = implemented in the current form (field_meeting_report v4); derived = supplied by the system, not asked; unmapped = meaning/relationship NOT confirmed, deliberately not implemented. Edit this file and publish a new form version once confirmed.",
+  "columns": [
+    {
+      "col": "A",
+      "header": "Timestamp",
+      "status": "derived",
+      "target": "submission: submitted_at_device (+ server received/accepted times)"
+    },
+    {
+      "col": "B",
+      "header": "Select you branch name ?",
+      "status": "derived",
+      "target": "submission.branch_id from the agent's branch assignment (branch master)"
+    },
+    {
+      "col": "C-K",
+      "header": "Nellore | Guntur | Vijayawada | Rajahmundry | Anakapalli | Visakhapatnam | LB Nagar | Warangal | Siddipet",
+      "status": "unmapped",
+      "target": null,
+      "question": "Nine columns named after branches, all empty. They look like per-branch follow-up questions (shown after choosing that branch) but their question text is not in the export. What does each ask? Branch names themselves are handled by the branch master."
+    },
+    {
+      "col": "L",
+      "header": "Enter your employee id ?",
+      "status": "derived",
+      "target": "submission.user_id / employee_code from the signed-in agent (never typed or trusted from the client)"
+    },
+    {
+      "col": "M",
+      "header": "What category is the person met ?",
+      "status": "mapped",
+      "target": "meeting_details[n].contact_category = 'Type of person' dropdown (v4). Options are a managed list (Admin > Type of person): add/rename/deactivate/reorder; custom 'Other' optional. v1-v3 stored free text."
+    },
+    {
+      "col": "N",
+      "header": "Name of the person met ?",
+      "status": "mapped",
+      "target": "meeting_details[n].contact_name"
+    },
+    {
+      "col": "O",
+      "header": "WhtsApp number of the person met ?",
+      "status": "mapped",
+      "target": "meeting_details[n].contact_whatsapp"
+    },
+    {
+      "col": "P",
+      "header": "Date ?",
+      "status": "mapped",
+      "target": "meeting_details[n].meeting_date"
+    },
+    {
+      "col": "Q",
+      "header": "Short description of the meeting ? ",
+      "status": "mapped",
+      "target": "meeting_details[n].meeting_description"
+    },
+    {
+      "col": "R",
+      "header": "Time of keka photo captured ?",
+      "status": "derived",
+      "target": "Not typed. The app records the time (and GPS) of every photo automatically at the moment it is taken (photo_captured_at_device, with accuracy and location status), shown in the admin web as 'Photo capture event'. Removed from the form in v3."
+    },
+    {
+      "col": "S",
+      "header": "What type of CP?",
+      "status": "unmapped",
+      "target": null,
+      "question": "What does CP stand for and which meetings does it apply to? Possible values?"
+    },
+    {
+      "col": "T",
+      "header": "Column 19",
+      "status": "unmapped",
+      "target": null,
+      "question": "Untitled question in the original form. Purpose unknown."
+    },
+    {
+      "col": "U",
+      "header": "Column 20",
+      "status": "unmapped",
+      "target": null,
+      "question": "Untitled question in the original form. Purpose unknown."
+    },
+    {
+      "col": "V",
+      "header": "What type of CP? 2",
+      "status": "unmapped",
+      "target": null,
+      "question": "Which meeting does this CP-type belong to?"
+    },
+    {
+      "col": "W",
+      "header": "Column 22",
+      "status": "unmapped",
+      "target": null,
+      "question": "Untitled question in the original form. Purpose unknown."
+    },
+    {
+      "col": "X",
+      "header": "What type of CP? 3",
+      "status": "unmapped",
+      "target": null,
+      "question": "Which meeting does this CP-type belong to?"
+    },
+    {
+      "col": "Y",
+      "header": "Name of the person met ? 2",
+      "status": "mapped",
+      "target": "meeting_details[1].contact_name (repeat of the meeting block)"
+    },
+    {
+      "col": "Z",
+      "header": "WhtsApp number of the person met ? 2",
+      "status": "mapped",
+      "target": "meeting_details[1].contact_whatsapp"
+    },
+    {
+      "col": "AA",
+      "header": "Date ? 2",
+      "status": "mapped",
+      "target": "meeting_details[1].meeting_date"
+    },
+    {
+      "col": "AB",
+      "header": "Short description of the meeting ?  2",
+      "status": "mapped",
+      "target": "meeting_details[1].meeting_description"
+    },
+    {
+      "col": "AC",
+      "header": "Time of keka photo captured ? 2",
+      "status": "derived",
+      "target": "Not typed. The app records the time (and GPS) of every photo automatically at the moment it is taken (photo_captured_at_device, with accuracy and location status), shown in the admin web as 'Photo capture event'. Removed from the form in v3."
+    },
+    {
+      "col": "AD",
+      "header": "What type of CP? 4",
+      "status": "unmapped",
+      "target": null,
+      "question": "Which meeting does this CP-type belong to?"
+    },
+    {
+      "col": "AE",
+      "header": "Name of the person met ? 3",
+      "status": "mapped",
+      "target": "meeting_details[2].contact_name"
+    },
+    {
+      "col": "AF",
+      "header": "WhtsApp number of the person met ? 3",
+      "status": "mapped",
+      "target": "meeting_details[2].contact_whatsapp"
+    },
+    {
+      "col": "AG",
+      "header": "Date ? 3",
+      "status": "mapped",
+      "target": "meeting_details[2].meeting_date"
+    },
+    {
+      "col": "AH",
+      "header": "Short description of the meeting ?  3",
+      "status": "mapped",
+      "target": "meeting_details[2].meeting_description"
+    },
+    {
+      "col": "AI",
+      "header": "Time of keka photo captured ? 3",
+      "status": "derived",
+      "target": "Not typed. The app records the time (and GPS) of every photo automatically at the moment it is taken (photo_captured_at_device, with accuracy and location status), shown in the admin web as 'Photo capture event'. Removed from the form in v3."
+    },
+    {
+      "col": "AJ",
+      "header": "What category is the person met ? 2",
+      "status": "mapped",
+      "target": "meeting_details[n].contact_category for another meeting (which meeting it belongs to is NOT confirmed). The repeatable section gives every meeting its own Type of person instead."
+    }
+  ],
+  "photos": "Original workbook had no photo field; v3 has 'meeting_photos' (up to 5 photos per meeting, camera only), each with its own automatic capture time and GPS."
+}

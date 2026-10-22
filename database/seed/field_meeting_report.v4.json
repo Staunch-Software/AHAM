@@ -1,0 +1,69 @@
+{
+  "form_id": "field_meeting_report",
+  "version": 4,
+  "title": "Field Meeting Report",
+  "sections": [
+    {
+      "id": "meeting_details",
+      "title": "Meeting Details",
+      "repeatable": true,
+      "min_items": 1,
+      "max_items": 10,
+      "fields": [
+        {
+          "id": "contact_category",
+          "key": "contact_category",
+          "label": "Type of person",
+          "type": "dropdown",
+          "options_source": "person_types",
+          "required": true
+        },
+        {
+          "id": "contact_name",
+          "key": "contact_name",
+          "label": "Name of the person met",
+          "type": "text",
+          "required": true,
+          "validation": {
+            "max_length": 200
+          }
+        },
+        {
+          "id": "contact_whatsapp",
+          "key": "contact_whatsapp",
+          "label": "WhatsApp number of the person met",
+          "type": "phone",
+          "required": false
+        },
+        {
+          "id": "meeting_date",
+          "key": "meeting_date",
+          "label": "Date",
+          "type": "date",
+          "required": true,
+          "default": "today"
+        },
+        {
+          "id": "meeting_description",
+          "key": "meeting_description",
+          "label": "Short description of the meeting",
+          "type": "multiline_text",
+          "required": true,
+          "validation": {
+            "max_length": 2000
+          }
+        },
+        {
+          "id": "meeting_photos",
+          "key": "meeting_photos",
+          "label": "Meeting photos",
+          "type": "photos",
+          "required": false,
+          "validation": {
+            "max": 5
+          }
+        }
+      ]
+    }
+  ]
+}

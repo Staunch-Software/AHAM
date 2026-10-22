@@ -1,0 +1,35 @@
+# SITE_ADDRESS examples: app.example.com  (automatic HTTPS via Let's Encrypt)
+#                        http://localhost:8080 (plain HTTP, local testing only)
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# Google Maps (Field map page) needs its own script, tile images, XHR and a worker; everything else stays same-origin.
+		# NOTE: the Maps allow-list below follows Google's CSP guide but has not been exercised with a real key yet.
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://maps.googleapis.com https://maps.gstatic.com; img-src 'self' data: https://maps.googleapis.com https://maps.gstatic.com https://*.googleusercontent.com https://*.ggpht.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://maps.googleapis.com; font-src 'self' https://fonts.gstatic.com; worker-src blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	# API + health. flush_interval -1 streams Server-Sent Events immediately (no buffering).
+	@api path /api/* /health /ready
+	handle @api {
+		request_body {
+			max_size 16MB
+		}
+		reverse_proxy backend:8000 {
+			flush_interval -1
+		}
+	}
+
+	# Admin web (single-page app): unknown paths fall back to index.html.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

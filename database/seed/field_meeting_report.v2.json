@@ -1,0 +1,23 @@
+{
+  "form_id": "field_meeting_report",
+  "version": 2,
+  "title": "Field Meeting Report",
+  "sections": [
+    {
+      "id": "meeting_details",
+      "title": "Meeting Details",
+      "repeatable": true,
+      "min_items": 1,
+      "max_items": 10,
+      "fields": [
+        {"id": "contact_category", "key": "contact_category", "label": "What category is the person met?", "type": "text", "required": true, "validation": {"max_length": 100}},
+        {"id": "contact_name", "key": "contact_name", "label": "Name of the person met", "type": "text", "required": true, "validation": {"max_length": 200}},
+        {"id": "contact_whatsapp", "key": "contact_whatsapp", "label": "WhatsApp number of the person met", "type": "phone", "required": false},
+        {"id": "meeting_date", "key": "meeting_date", "label": "Date", "type": "date", "required": true},
+        {"id": "meeting_description", "key": "meeting_description", "label": "Short description of the meeting", "type": "multiline_text", "required": true, "validation": {"max_length": 2000}},
+        {"id": "keka_photo_time", "key": "keka_photo_time", "label": "Time of Keka photo captured", "type": "time", "required": false},
+        {"id": "meeting_photo", "key": "meeting_photo", "label": "Meeting photo", "type": "photo", "required": false}
+      ]
+    }
+  ]
+}
