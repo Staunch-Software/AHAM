@@ -1,0 +1,21 @@
+{
+  "note": "Regions and branches from Annex A of the Sankalp business logic (v1, 28 Oct 2026), as used in call-centre allocation. Branch codes are PLACEHOLDERS: replace them with the real codes in the HR & Admin portal (Organization). Open questions for Aham: Madurai is under RoTN U here (call-centre allocation) but under RoTN C in the regional pipeline files; Krishnagiri is under RoTN C here but appears in the Chennai Sankalp form. Move a branch in Organization once Aham confirms.",
+  "regions": [
+    {"code": "APTG", "name": "AP & TG", "branches": [
+      ["Anakapalli", "AKP"], ["Guntur", "GNT"], ["LB Nagar", "LBN"], ["Nellore", "NLR"], ["Rajahmundry", "RJY"],
+      ["Siddipet", "SDPT"], ["Vijayawada", "VJA"], ["Visakhapatnam", "VSKP"], ["Warangal", "WGL"]]},
+    {"code": "CHN1", "name": "Chennai 1", "branches": [
+      ["Avadi", "AVD"], ["Cuddalore", "CDL"], ["Thiruvannamalai", "TVM"], ["Villupuram", "VPM"]]},
+    {"code": "CHN2", "name": "Chennai 2", "branches": [
+      ["Chengalpattu", "CGL"], ["Kanchipuram", "KPM"], ["Porur", "PRR"], ["Vellore", "VLR"]]},
+    {"code": "KA", "name": "Karnataka", "branches": [
+      ["Bengaluru", "BLR"], ["Chikkaballapura", "CBP"], ["Hosakote", "HSK"], ["Kolar", "KLR"], ["Mysuru", "MYS"],
+      ["Tumakuru", "TMK"]]},
+    {"code": "ROTNC", "name": "RoTN C", "branches": [
+      ["Attur", "ATR"], ["Coimbatore", "CBE"], ["Erode", "ERD"], ["Krishnagiri", "KGI"], ["Salem", "SLM"]]},
+    {"code": "ROTNT", "name": "RoTN T", "branches": [
+      ["Dindigul", "DGL"], ["Pudukottai", "PDK"], ["Thanjavur", "TJV"], ["Trichy", "TRY"]]},
+    {"code": "ROTNU", "name": "RoTN U", "branches": [
+      ["Madurai", "MDU"], ["Theni", "THN"], ["Usilampatti", "USP"]]}
+  ]
+}
