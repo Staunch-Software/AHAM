@@ -3,6 +3,7 @@ import { ScrollText } from 'lucide-react'
 import { useState } from 'react'
 import { Avatar, Card, EmptyState, ErrorBox, PageTitle, Pager, Skeleton, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
+import { allPages } from '../../services/exporting'
 import { fmtServer } from '../../services/format'
 
 interface Entry { id: string; actor: string | null; action: string; entity_type: string; entity_id: string | null; details: Record<string, unknown> | null; created_at: string }
@@ -29,7 +30,9 @@ export default function Audit() {
         <Card flush><div className="space-y-3 p-5" role="status" aria-label="Loading audit log">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-10" />)}</div></Card>
       ) : (
         <Card flush>
-          <Table head={['When', 'Who', 'Action', 'Record', 'What changed']}>
+          <Table head={['When', 'Who', 'Action', 'Record', 'What changed']} exportName="Audit log"
+            exportAll={async () => (await allPages<Entry>('/audit-logs')).map((e) => [fmtServer(e.created_at), e.actor ?? 'system', e.action,
+              `${e.entity_type} ${e.entity_id ?? ''}`, e.details ? describe(e.details).join('; ') : ''])}>
             {data?.items.map((e) => (
               <tr key={e.id}>
                 <Td className="whitespace-nowrap">{fmtServer(e.created_at)}</Td>

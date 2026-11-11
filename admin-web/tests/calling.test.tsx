@@ -114,12 +114,12 @@ test('the BM answers a lead with a code and the date the code asks for', async (
 })
 
 test('entries list shows status and RAG for the scope', async () => {
-  installApiMock('branch_manager', { '/entries': { items: [entry({ status: 'In retry', rag: 'RNR', so_action: null })], total: 1, page: 1, page_size: 25 } })
+  installApiMock('branch_manager', { '/entries': { items: [entry({ status: 'In retry', current_status: 'In retry – 1 unanswered', rag: 'RNR', so_action: null })], total: 1, page: 1, page_size: 25 } })
   renderApp('/manage/entries')
   expect(await screen.findByText('AHFL90001-20261020-100000')).toBeInTheDocument()
   const row = screen.getByText('AHFL90001-20261020-100000').closest('tr')!
-  expect(within(row).getByText('In retry')).toBeInTheDocument()
-  expect(within(row).getByText('RNR')).toBeInTheDocument()
+  expect(within(row).getByText('In retry – 1 unanswered')).toBeInTheDocument()
+  expect(within(row).getByText('No answer')).toBeInTheDocument()
 })
 
 test('uploads check a file first without saving it', async () => {

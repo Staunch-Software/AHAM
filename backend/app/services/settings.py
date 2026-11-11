@@ -50,6 +50,8 @@ class SankalpSettings(BaseModel):
     # ---- [Aham to decide] (defaults = today's behaviour) ----
     same_day_calling: bool = False  # 5.2: entries are called from the next day
     duplicate_tcs_rule: Literal["latest", "first"] = "latest"  # 11.1: which register row wins for a repeated TCS ID
+    # 3 / 4.5: an SO with no attendance row that day is counted as present ("not marked") or as absent (AB)
+    unmarked_attendance: Literal["present", "absent"] = "present"
 
     @model_validator(mode="after")
     def _check(self):

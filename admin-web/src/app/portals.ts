@@ -2,6 +2,7 @@ import {
   BarChart3, Building2, ClipboardList, Download, FileUp, GanttChartSquare, Headphones, LayoutDashboard, ListChecks,
   type LucideIcon, MapPinned, PhoneCall, ScrollText, Settings as SettingsIcon, ShieldCheck, Sparkles, UserCog, Users,
 } from 'lucide-react'
+import { Database, Percent, SlidersHorizontal, TriangleAlert } from 'lucide-react'
 import type { PortalKey } from '../types'
 
 export interface NavItem { to: string; label: string; icon: LucideIcon; perms: string[] }
@@ -31,6 +32,7 @@ export const PORTALS: Record<PortalKey, PortalDef> = {
         ],
       },
       { title: 'People', items: [{ to: 'team', label: 'Team', icon: Users, perms: ['team.read'] }] },
+      { title: 'IRR', items: [{ to: 'irr', label: 'IRR report', icon: Percent, perms: ['irr.view'] }] },
     ],
   },
   callcentre: {
@@ -76,6 +78,14 @@ export const PORTALS: Record<PortalKey, PortalDef> = {
         title: 'Data', items: [
           { to: 'uploads', label: 'Uploads', icon: FileUp, perms: ['reference.import', 'login_register.upload'] },
           { to: 'team', label: 'Employee roster', icon: Users, perms: ['team.read'] },
+        ],
+      },
+      {
+        title: 'IRR', items: [
+          { to: 'irr', label: 'IRR report', icon: Percent, perms: ['irr.view'] },
+          { to: 'irr-data', label: 'Disbursement register', icon: Database, perms: ['irr.manage'] },
+          { to: 'irr-exceptions', label: 'IRR exceptions', icon: TriangleAlert, perms: ['irr.manage'] },
+          { to: 'irr-settings', label: 'IRR settings', icon: SlidersHorizontal, perms: ['irr.manage'] },
         ],
       },
       {

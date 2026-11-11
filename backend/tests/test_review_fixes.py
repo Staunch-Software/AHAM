@@ -47,17 +47,23 @@ def test_10_1_not_called_group_is_na_and_21_1_lost_lead_is_na():
     assert E.rag_for(status=R.DSA_RED, lost_lead=True, **base) == "RED"
 
 
-def test_13_1_dsa_cp_may_be_called_on_its_callback_day():
+def test_13_1_a_dsa_cp_is_called_on_one_day_only_and_a_callback_request_closes_it():
+    # as the Takeoff master: one try for a DSA/CP; asking for a callback closes it like an unanswered try
     kw = dict(call_group="dsa_cp", attempts_today=0, cfg_tries_lead=2, cfg_max_slots=3, cfg_tries_dsa=1)
-    assert E.attempt_allowed(days_called={D(21)}, today=D(23), callback_days={D(23)}, **kw) is None
-    assert E.attempt_allowed(days_called={D(21)}, today=D(24), callback_days={D(23)}, **kw)
     assert E.attempt_allowed(days_called={D(21)}, today=D(23), **kw)
+    assert E.row_status(call_group="dsa_cp", outcome=R.CALLBACK, answers=None, unanswered_after=0,
+                        max_unanswered=9) == R.CLOSED_NO_ANSWER
+    assert E.row_status(call_group="lead", outcome=R.CALLBACK, answers=None, unanswered_after=0,
+                        max_unanswered=9) == R.IN_RETRY
 
 
-def test_22_1_validated_on_is_the_first_validating_call_and_21_1_red_after_validation_is_na():
+def test_22_1_validated_on_is_the_latest_call_that_gave_a_status_and_21_1_red_after_validation_is_na():
     ok = OK | {"next_step": "Call centre to continue"}
     st = state(att(D(12), R.CONNECTED, R.VALIDATED, ok), att(D(15), R.CONNECTED, R.VALIDATED, ok))
-    assert E.derive(st, E.Settings(), D(16)).validated_on == D(12)
+    assert E.derive(st, E.Settings(), D(16)).validated_on == D(15)  # as the Takeoff master
+    st = state(att(D(12), R.CONNECTED, R.VALIDATED, ok), att(D(15), R.RNR, R.IN_RETRY))
+    d = E.derive(st, E.Settings(), D(16))
+    assert (d.status, d.validated_on, d.unanswered_count) == (R.VALIDATED, D(12), 1)  # an unanswered call gives none
     lost = state(att(D(12), R.CONNECTED, R.VALIDATED, ok),
                  att(D(15), R.CONNECTED, R.RED, {"loan_need": "Not looking for a loan"}))
     d = E.derive(lost, E.Settings(), D(16))
@@ -90,18 +96,16 @@ async def test_10_1_existing_customer_stays_na_after_a_recalculation(client, ten
     assert (await f.get(e["id"]))["rag"] == "NA"
 
 
-async def test_13_1_dsa_cp_callback_is_called_on_that_day(client, tenant_a, clock):
+async def test_13_1_a_dsa_cp_callback_request_closes_it(client, tenant_a, clock):
     f = Flow(client, tenant_a)
     e = await f.entry("so1", category="dsa_connector", phone="9000000102")
     await f.callers(clock.day, {"b1": "caller1"})
     await f.run(clock.day)
     r = await f.call("caller1", e["id"], R.CALLBACK, next_date="2026-10-23")
-    assert r["status"] == R.IN_RETRY
+    assert (r["status"], r["cc_action"]) == (R.CLOSED_NO_ANSWER, None)  # one try for a DSA/CP (Takeoff master)
     clock.day = D(23)
     await f.run(clock.day)
-    assert e["entry_code"] in await f.list("caller1")
-    r = await f.call("caller1", e["id"], R.RNR)
-    assert r["status"] == R.CLOSED_NO_ANSWER
+    assert e["entry_code"] not in await f.list("caller1")
 
 
 async def test_15_1_converted_dsa_cp_follow_up_is_called_as_a_lead(client, tenant_a, clock):
@@ -117,7 +121,7 @@ async def test_15_1_converted_dsa_cp_follow_up_is_called_as_a_lead(client, tenan
     await f.run(clock.day)
     assert (await f.list("caller1"))[e["entry_code"]]["kind"] == "followup"
     r = await f.call("caller1", e["id"], R.RNR)  # refused before the fix ("called on one day only")
-    assert (r["status"], r["rag"]) == (R.IN_RETRY, "RNR")
+    assert (r["status"], r["rag"]) == (R.VALIDATED_CONVERTED, "GREEN")  # an unanswered call keeps the status
     r = await f.call("caller1", e["id"], R.CONNECTED, OK | {"next_step": "Call centre to continue"}, slot="03-04")
     assert r["status"] == R.VALIDATED_CONVERTED  # the conversion holds without asking "needs a home loan?" again
 
@@ -195,7 +199,7 @@ async def test_25_2_return_to_branch_on_the_tracker_returns_a_green_channel_reje
     assert r.status_code == 200, r.text
     d = await f.get(e["id"])
     assert d["branch_answers"][-1]["green_channel"] == "returned" and d["lead_outcome"] is None
-    assert d["so_action"] == R.ACT_VISIT
+    assert d["so_action"] == R.ACT_GREEN_LOGIN  # back with the branch to log in (Takeoff master)
 
 
 async def test_12_1_a_callers_list_moves_to_another_caller(client, tenant_a, clock):

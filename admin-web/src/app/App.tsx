@@ -25,6 +25,10 @@ import Compliance from '../features/compliance/Compliance'
 import Dashboard from '../features/dashboard/Dashboard'
 import EntryDetail from '../features/entries/EntryDetail'
 import EntryList from '../features/entries/EntryList'
+import DisbursementRegister from '../features/irr/DisbursementRegister'
+import IrrExceptions from '../features/irr/IrrExceptions'
+import IrrReport from '../features/irr/IrrReport'
+import IrrSettings from '../features/irr/IrrSettings'
 import MapPage from '../features/map/MapPage'
 import Team from '../features/team/Team'
 import { AuthProvider, useAuth } from '../services/auth'
@@ -41,6 +45,8 @@ const PAGES: Record<string, () => ReactElement> = {
   'cc-actions': () => <CcActions />, performance: () => <CallPerformance />, uploads: () => <Uploads />,
   queues: () => <Queues />, takeoff: () => <Takeoff />, users: () => <Users />, organization: () => <Organization />,
   settings: () => <Settings />, audit: () => <Audit />,
+  irr: () => <IrrReport />, 'irr-data': () => <DisbursementRegister />, 'irr-exceptions': () => <IrrExceptions />,
+  'irr-settings': () => <IrrSettings />,
 }
 
 export function NotFound() {

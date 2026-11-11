@@ -1,0 +1,14 @@
+Emp ID,Date met,Time met,Category,CP sub-type,Name of person met,Mobile number,Description,Keka photo time
+AHFL90003,07-11-2026,10:40,Lead,,Nagarjuna Rao,9000100001,Wants a 2BHK flat near Benz Circle,10:38
+AHFL90004,07-11-2026,11:00,Prospect,,Revathi Kumari,9000100002,Plans to build on her plot next year,
+AHFL90002,07-11-2026,11:20,Lead,,Venkata Rao,+91 90001 00003,Needs money against his shop for expansion,
+AHFL90003,07-11-2026,12:30,DSA/Connector,,Balaji Constructions,9000100004,Builder with 3 projects in Patamata,
+AHFL90002,07-11-2026,13:10,Contact Point,Other Hardware Shop,Sri Sai Hardware,9000100005,Hardware shop near the bus stand,
+AHFL90003,07-11-2026,14:00,Existing Customer,,Mohan Das,9000100006,Already has a home loan with us,
+AHFL90004,07-11-2026,15:00,Lead,,Revathi Kumari,9000100002,Met her again at the site,
+AHFL90001,07-11-2026,16:20,Lead,,Nagarjuna Rao,9000100001,Wants a flat; met at a wedding,
+AHFL90001,07-11-2026,17:05,Lead,,Prasad Varma,9000100007,Buying a plot in Gunadala,
+AHFL90004,07-11-2026,17:30,Lead,,Lakshmi Prasanna,9000100008,Wants to extend her house,
+AHFL90005,07-11-2026,11:45,Lead,,Gopi Krishna,9000100009,Teacher; wants a flat in Guntur,
+AHFL90003,07-11-2026,18:00,Builder,,Ramu Yadav,9000100010,Unknown category: this row is refused,
+AHFL99999,07-11-2026,18:10,Lead,,Sita Devi,9000100011,Emp ID not on the roster: this row is refused,

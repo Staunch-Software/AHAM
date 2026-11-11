@@ -29,11 +29,11 @@ export default function BranchLeads() {
         {isLoading || !data ? <div className="space-y-2 p-5">{Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-12" />)}</div>
           : data.items.length === 0 ? <EmptyState icon={<ListChecks size={20} />} title="No leads are waiting for your branch." hint="Validated leads appear here after the call centre speaks to the customer." />
             : (
-              <Table head={['Lead', 'Customer', 'SO', 'Action', 'Last answer', 'RAG', '']}>
+              <Table head={['Entry ID (current status)', 'Customer (mobile number)', 'Sales Officer', 'Next action and date', 'Branch’s last answer', 'RAG', '']} exportName="Leads to answer">
                 {data.items.map((l) => (
                   <tr key={l.id}>
-                    <Td className="whitespace-nowrap"><Link className="font-mono text-xs font-semibold text-brand-700 hover:underline" to={path(`entries/${l.id}`)}>{l.entry_code}</Link><div className="text-xs text-slate-500">{l.status}</div></Td>
-                    <Td><div className="font-medium text-slate-900">{l.person_name}</div><div className="tabular text-xs text-slate-500">{l.phone}</div></Td>
+                    <Td className="whitespace-nowrap"><Link className="font-mono text-xs font-semibold text-brand-700 hover:underline" to={path(`entries/${l.id}`)}>{l.entry_code}</Link><div className="text-xs text-slate-500">{l.current_status}</div></Td>
+                    <Td><div className="font-medium text-slate-900">{l.person_name}</div><div className="tabular text-xs text-slate-500">Mobile: {l.phone}</div></Td>
                     <Td>{l.so_name}<div className="text-xs text-slate-500">{l.branch_name}</div>{l.handling_branch_name && <div className="text-xs font-medium text-gold-700">Handled by {l.handling_branch_name}</div>}</Td>
                     <Td className="text-sm">
                       {l.so_action ? <><span className="font-medium">{l.so_action}</span>{l.so_action_date && <div className="flex items-center gap-1 text-xs text-slate-500"><CalendarClock size={12} aria-hidden="true" />{l.so_action_date}</div>}</>

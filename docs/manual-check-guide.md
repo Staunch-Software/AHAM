@@ -11,14 +11,14 @@ number): they are collected in **Next-day checks** at the end.
 ## Before you start
 
 **What must be running**
-- Backend and database: `docker compose up -d` in `C:\Staunch\fieldsync`. Check: http://localhost:8000/docs opens.
+- Backend and database: `docker compose up -d` in `C:\Staunch\AHAM\AHAM`. Check: http://localhost:8000/docs opens.
 - Web portals: http://localhost:5173 (from `cd admin-web && npm run dev`).
 - The phone app **AHAM Sankalp 1.1.0** on your phone (same Wi-Fi as the PC) or on the emulator. The server address is
   built into the app, so it must be the PC's **current** Wi-Fi address (`ipconfig`, "Wireless LAN adapter Wi-Fi",
   IPv4). On 2026-11-02 that is `192.168.14.102`: use `mobile/dist/aham-sankalp-1.1.0-192.168.14.102.apk`. The app's
   **Me** tab shows version 1.1.0 and the server it uses. If the PC's address changes, the app needs a rebuild.
 
-**Accounts.** Every demo account uses the same password: `SEED_PASSWORD` in `C:\Staunch\fieldsync\.env`.
+**Accounts.** Every demo account uses the same password: `SEED_PASSWORD` in `C:\Staunch\AHAM\AHAM\.env`.
 
 | Who | Emp ID | Where they sign in |
 |---|---|---|

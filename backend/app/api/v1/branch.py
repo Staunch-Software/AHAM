@@ -57,7 +57,7 @@ async def branch_leads(user: User = Depends(require_perm("branch.answer")), s: A
     """Leads waiting for the branch: open lead actions (visit, documents, follow-up) and green-channel holds.
     A BM sees its branch; an RBH sees the branches of its region that have no BM."""
     today = await company_today(s, user.company_id)
-    q = _joined().where(await entry_scope(s, user), or_(SankalpEntry.so_action.in_(R.LEAD_ACTIONS),
+    q = _joined().where(await entry_scope(s, user), or_(SankalpEntry.so_action.in_(R.BRANCH_LEAD_ACTIONS),
                                                          SankalpEntry.cc_action == R.CC_FOLLOW_UP))
     visible = await visible_branch_ids(s, user)
     if visible is not None:  # the branch that works the lead answers it (7.4 handling branch)
@@ -96,7 +96,7 @@ async def so_actions(expired: bool = False, action: str | None = None, page: int
     col = SankalpEntry.expired_action if expired else SankalpEntry.so_action
     q = _joined().where(await entry_scope(s, user), col.is_not(None))
     if action:
-        q = q.where(col.in_(R.LEAD_ACTIONS) if action == "lead" else col == action)
+        q = q.where(col.in_(R.BRANCH_LEAD_ACTIONS) if action == "lead" else col == action)
     if expired:
         return await _page(s, q, [SankalpEntry.expired_on.desc(), SankalpEntry.entry_code], page, page_size)
     return await _page(s, q, [SankalpEntry.so_action_date.nulls_last(), SankalpEntry.entry_code], page, page_size)

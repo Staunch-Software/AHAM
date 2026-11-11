@@ -1,5 +1,7 @@
-import { Loader2, X } from 'lucide-react'
-import { ButtonHTMLAttributes, forwardRef, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useRef } from 'react'
+import { Download, Loader2, X } from 'lucide-react'
+import { ButtonHTMLAttributes, forwardRef, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useRef, useState } from 'react'
+import { errorMessage } from '../services/api'
+import { type Cells, saveCsv, saveXlsx, tableCells } from '../services/exporting'
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ')
 
@@ -191,7 +193,8 @@ const RAG_TONES: Record<string, string> = {
   PENDING: 'bg-sky-50 text-sky-700 ring-sky-600/20',
 }
 const RAG_DOTS: Record<string, string> = { RED: 'bg-roof-500', AMBER: 'bg-amber-500', GREEN: 'bg-emerald-500', RNR: 'bg-violet-500', NA: 'bg-slate-400', PENDING: 'bg-sky-500' }
-export const RAG_LABEL: Record<string, string> = { RED: 'Red', AMBER: 'Amber', GREEN: 'Green', RNR: 'RNR', NA: 'NA', PENDING: 'Pending' }
+// the same words as the server's RAG_LABELS (rules.py)
+export const RAG_LABEL: Record<string, string> = { RED: 'Red', AMBER: 'Amber', GREEN: 'Green', RNR: 'No answer', NA: 'Not applicable', PENDING: 'Not called yet' }
 
 /** Section 9 RAG. `overridden` marks a manual override by the master owner. */
 export function RagBadge({ value, overridden }: { value: string; overridden?: boolean }) {
@@ -203,14 +206,12 @@ export function RagBadge({ value, overridden }: { value: string; overridden?: bo
   )
 }
 
-/** The entry's status text (Annex B), or its selection result, or "Waiting". */
-/** Existing Customer / Applicant entries are never selected (5.1): say so instead of "Not yet selected". */
-export const NOT_CALLED_EXISTING = 'Not called (existing customer / applicant)'
-
-export function StatusText({ status, selection, callGroup }: { status: string | null; selection?: string | null; callGroup?: string | null }) {
-  const text = status ?? (selection && selection !== 'Allocate' ? selection : selection === 'Allocate' ? 'Waiting for first call'
-    : callGroup === 'none' ? NOT_CALLED_EXISTING : 'Not yet selected')
-  const tone = !status ? 'text-slate-500' : status.startsWith('Validated') ? 'text-emerald-700' : status.startsWith('Amber') || status.startsWith('Red') ? 'text-roof-700' : 'text-slate-700'
+/** An entry's one current status (worked out by the server: login outcome, else the latest call, else the selection). */
+export function StatusText({ value }: { value: string | null | undefined }) {
+  const text = value ?? '—'
+  const tone = text.startsWith('Validated') || text === 'Logged in' ? 'text-emerald-700'
+    : text.startsWith('Amber') || text.startsWith('Red') || text === 'Rejected' ? 'text-roof-700'
+      : text.startsWith('Waiting') || text.startsWith('Not called') ? 'text-slate-500' : 'text-slate-700'
   return <span className={cx('text-sm', tone)}>{text}</span>
 }
 
@@ -258,17 +259,53 @@ export const Badge = ({ value }: { value: string }) => {
 
 /* ---------- tables ---------- */
 
-/** Flat table: put it inside `<Card flush>` for the rounded border. */
-export const Table = ({ head, children }: { head: string[]; children: ReactNode }) => (
-  <div className="overflow-x-auto">
-    <table className="w-full text-left text-sm">
-      <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-        <tr>{head.map((h) => <th key={h} scope="col" className="whitespace-nowrap border-y border-slate-200 px-4 py-3">{h}</th>)}</tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-brand-50/40">{children}</tbody>
-    </table>
-  </div>
-)
+/** Flat table: put it inside `<Card flush>` for the rounded border.
+ *  `exportName` adds "Export: CSV / Excel". It exports the rows on screen (columns with an empty heading, such as
+ *  buttons, are left out), or, for a paged list, `exportAll`: every row, in the order of the non-empty headings. */
+export function Table({ head, children, exportName, exportAll, exportHeader }: {
+  head: string[]; children: ReactNode; exportName?: string; exportAll?: () => Promise<Cells[]>; exportHeader?: string[]
+}) {
+  const ref = useRef<HTMLTableElement>(null)
+  const columns = head.filter((h) => h !== '')
+  const rows = async () => (exportAll ? exportAll() : tableCells(ref.current!, head.map((h) => h !== '')))
+  return (
+    <div className="overflow-x-auto">
+      {exportName && <ExportBar name={exportName} header={exportHeader ?? columns} rows={rows} />}
+      <table ref={ref} className="w-full text-left text-sm">
+        <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <tr>{head.map((h, i) => <th key={`${h}${i}`} scope="col" className="whitespace-nowrap border-y border-slate-200 px-4 py-3">{h}</th>)}</tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-brand-50/40">{children}</tbody>
+      </table>
+    </div>
+  )
+}
+
+/** "Export: CSV · Excel" for any list: `rows` gives every row to export (fetching all pages when needed). */
+export function ExportBar({ name, header, rows, className }: { name: string; header: string[]; rows: () => Promise<Cells[]> | Cells[]; className?: string }) {
+  const [busy, setBusy] = useState<'csv' | 'xlsx' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const go = async (kind: 'csv' | 'xlsx') => {
+    setBusy(kind); setError(null)
+    try {
+      const data = await rows()
+      if (kind === 'csv') saveCsv(name, header, data)
+      else await saveXlsx(name, header, data)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+  return (
+    <div className={cx('flex flex-wrap items-center justify-end gap-2 px-4 py-2 text-xs text-slate-500', className)}>
+      {error && <span role="alert" className="text-roof-600">Export failed: {error}</span>}
+      <span>Export:</span>
+      <button type="button" disabled={!!busy} onClick={() => go('csv')} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50"><Download size={12} aria-hidden="true" />{busy === 'csv' ? 'Preparing…' : 'CSV'}</button>
+      <button type="button" disabled={!!busy} onClick={() => go('xlsx')} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50"><Download size={12} aria-hidden="true" />{busy === 'xlsx' ? 'Preparing…' : 'Excel'}</button>
+    </div>
+  )
+}
 export const Td = ({ children, className }: { children?: ReactNode; className?: string }) => <td className={cx('px-4 py-3 align-top text-slate-700', className)}>{children}</td>
 
 export function Pager({ page, pageSize, total, onChange }: { page: number; pageSize: number; total: number; onChange: (p: number) => void }) {

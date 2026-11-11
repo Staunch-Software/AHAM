@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Button, Dialog, ErrorBox, Field, Input, Select, Textarea, Toggle } from '../../components/ui'
+import { Button, Dialog, ErrorBox, Field, Input, RAG_LABEL, Select, Textarea, Toggle } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
 import { useCallers, useMeta, useSalesOfficers } from '../../services/meta'
 import type { EntryDetail, Tracker } from '../../types'
@@ -72,17 +72,17 @@ export function TrackerDialog({ entry, onClose }: { entry: EntryDetail; onClose:
   })
   return (
     <Dialog title="Follow-up tracker" onClose={onClose} wide>
-      <p className="mb-4 text-sm text-slate-600">Where this row and a branch answer disagree, the later date applies. A TCS ID entered here counts as a login. The RAG override wins over the computed RAG.</p>
+      <p className="mb-4 text-sm text-slate-600">Where this row and a branch answer disagree, the later date applies. Owner decides whose list shows the entry: <strong>Branch</strong> gives the branch the action type on the follow-up date; <strong>Call centre</strong> puts a follow-up on the call centre's list; <strong>Done</strong> closes it. A TCS ID entered here counts as a login. The RAG override wins over the computed RAG.</p>
       <ErrorBox error={m.error ? errorMessage(m.error) : null} />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Owner"><Select value={v.owner} onChange={set('owner')}><option value="">—</option>{meta?.tracker.owners.map((o) => <option key={o} value={o}>{o.replace('_', ' ')}</option>)}</Select></Field>
-        <Field label="Action type"><Input value={v.action_type} onChange={set('action_type')} placeholder="e.g. Documents follow-up" /></Field>
+        <Field label="Action type (for the branch when Owner = Branch)"><Select value={v.action_type} onChange={set('action_type')}><option value="">—</option>{meta?.tracker.action_types?.map((o) => <option key={o}>{o}</option>)}</Select></Field>
         <Field label="Caller"><Select value={v.caller_id} onChange={set('caller_id')}><option value="">—</option>{callers?.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}</Select></Field>
         <Field label="Follow-up date"><Input type="date" value={v.followup_date} onChange={set('followup_date')} /></Field>
         <Field label="Outcome"><Select value={v.outcome} onChange={set('outcome')}><option value="">—</option>{meta?.tracker.outcomes.map((o) => <option key={o}>{o}</option>)}</Select></Field>
         <Field label="TCS ID (manual login)" error={needTcs ? 'Type the TCS ID: a login counts only with it' : undefined}><Input value={v.tcs_id} onChange={set('tcs_id')} /></Field>
-        <Field label="Reject reason" error={needReason ? 'Give the reject reason' : undefined}><Input value={v.reject_reason} onChange={set('reject_reason')} /></Field>
-        <Field label="RAG override"><Select value={v.rag_override} onChange={set('rag_override')}><option value="">None (computed)</option>{['GREEN', 'AMBER', 'RED', 'RNR', 'NA'].map((r) => <option key={r}>{r}</option>)}</Select></Field>
+        <Field label="Reject reason" error={needReason ? 'Give the reject reason' : undefined}><Select value={v.reject_reason} onChange={set('reject_reason')}><option value="">—</option>{meta?.tracker.reject_reasons?.map((o) => <option key={o}>{o}</option>)}</Select></Field>
+        <Field label="RAG override"><Select value={v.rag_override} onChange={set('rag_override')}><option value="">None (computed)</option>{['GREEN', 'AMBER', 'RED', 'RNR', 'NA'].map((r) => <option key={r} value={r}>{RAG_LABEL[r]}</option>)}</Select></Field>
       </div>
       {v.outcome === 'Return to branch – green channel' && <p className="mt-3 rounded-lg bg-gold-50 px-3 py-2 text-xs text-slate-700">Returns the branch's green-channel R2/R3 rejection: the lead goes back to the branch to log in (the same as on the Green channel page).</p>}
       <div className="mt-4"><Toggle label="Immediate call-back (shown first, as PRIORITY)" checked={v.immediate_callback} onChange={(c) => setV({ ...v, immediate_callback: c })} /></div>

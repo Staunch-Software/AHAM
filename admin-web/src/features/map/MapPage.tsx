@@ -166,7 +166,7 @@ export default function MapPage() {
                 </div>
               </div>
               <Card title={`Locations (${data.markers.length})`} flush>
-                <Table head={['Entry', 'Person', 'Sales Officer', 'RAG', 'Place', 'Position', 'Made']}>
+                <Table head={['Entry ID', 'Person met', 'Sales Officer', 'RAG', 'Place name', 'GPS position', 'Entered on (phone time)']} exportName="Entries on the map">
                   {data.markers.map((m) => (
                     <tr key={m.id}>
                       <Td className="whitespace-nowrap"><Link className="font-mono text-xs font-semibold text-brand-700 hover:underline" to={path(`entries/${m.id}`)}>{m.entry_code}</Link></Td>

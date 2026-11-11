@@ -47,6 +47,8 @@ export interface EntryRow {
   device_time_suspect: boolean
   selection_status: string | null
   status: string | null
+  /** the one status shown for the entry (login outcome, else latest call, else selection) */
+  current_status: string
   rag: Rag
   rag_overridden: boolean
   priority: boolean
@@ -64,6 +66,8 @@ export interface EntryRow {
   customer_validated: boolean
   sankalp_success: boolean
   photo_count: number
+  /** app: made on the phone; import: a bulk upload by HR or the admin */
+  source?: 'app' | 'import'
   has_location: boolean
   place_name: string | null
 }
@@ -159,7 +163,7 @@ export interface Meta {
   statuses: string[]
   lead_outcomes: string[]
   rags: Rag[]
-  tracker: { owners: string[]; outcomes: string[] }
+  tracker: { owners: string[]; outcomes: string[]; action_types?: string[]; reject_reasons?: string[] }
   /** Current windows and limits (section 14), so screen texts follow the settings. */
   limits: Limits
 }

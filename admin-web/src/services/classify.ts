@@ -36,3 +36,13 @@ export function currentSlot(slots: string[], now = new Date()): string {
   const s = `${fmt(h)}-${fmt(h + 1)}`
   return slots.includes(s) ? s : slots[0] ?? ''
 }
+
+// 7.2 as the Takeoff call sheet asks them: these only once the loan need is a loan (not LAP, BT + LAP or no loan),
+// and own contribution only for a purchase or construction; the server keeps the same rule
+const LOAN_QUESTIONS = ['timeline', 'income', 'documents', 'next_step', 'purpose']
+const OWN_CONTRIBUTION_NEEDS = ['Home purchase', 'Self-construction', 'Plot + construction']
+export function questionApplies(key: string, loanNeed?: string): boolean {
+  const loan = !!loanNeed && !['LAP', 'BT + LAP', 'Not looking for a loan'].includes(loanNeed)
+  if (key === 'own_contribution') return loan && OWN_CONTRIBUTION_NEEDS.includes(loanNeed!)
+  return LOAN_QUESTIONS.includes(key) ? loan : true
+}

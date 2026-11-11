@@ -85,6 +85,8 @@ class SankalpEntry(Base):
     client_entry_id: Mapped[str] = mapped_column(String(100))
     request_hash: Mapped[str] = mapped_column(String(64))
     photo_count: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str] = mapped_column(String(10), default="app", server_default="app")  # app | import
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("import_batches.id"))
     call_group: Mapped[str] = mapped_column(String(10))  # lead | dsa_cp | none
     # Calling state (derived)
     selection_status: Mapped[str | None] = mapped_column(String(60))  # "Allocate" or a "Not called – …" status

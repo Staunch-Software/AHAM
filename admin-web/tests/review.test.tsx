@@ -140,12 +140,16 @@ test('dashboard offers last week (on a Monday, this week is still empty)', async
   await waitFor(() => expect(seen).toContain('last_week'))
 })
 
-test('an Existing Customer entry says it is never called, not "Not yet selected"', async () => {
-  const row = entry({ category: 'existing_customer', category_label: 'Existing Customer', call_group: 'none', selection_status: null, rag: 'NA' })
+test('each entry shows one current status, not its earlier ones', async () => {
+  // the server works out the one status (here the login outcome wins over the last call's "In retry")
+  const row = entry({ status: 'In retry', selection_status: 'Allocate', lead_outcome: 'Logged in', current_status: 'Logged in', rag: 'NA' })
   installApiMock('sankalp_monitor', { '/entries': { items: [row], total: 1, page: 1, page_size: 25 } })
   renderApp('/admin/entries')
-  expect(await screen.findByText('Not called (existing customer / applicant)')).toBeInTheDocument()
-  expect(within(screen.getByRole('table')).queryByText('Not yet selected')).not.toBeInTheDocument()
+  const table = await screen.findByRole('table')
+  expect(await within(table).findByText('Logged in')).toBeInTheDocument()
+  expect(within(table).queryByText('In retry')).not.toBeInTheDocument()
+  expect(within(table).queryByText('Allocate')).not.toBeInTheDocument()
+  expect(within(table).getByText('Mobile: 9876543210')).toBeInTheDocument()  // a number always says what it is
 })
 
 test('a second run the same day says nothing new was found, and the day keeps showing what its run did', async () => {

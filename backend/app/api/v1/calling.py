@@ -57,7 +57,8 @@ async def meta(user: User = Depends(current_user), s: AsyncSession = Depends(get
                       "dsa_rag": R.DSA_RAG},
         "branch_codes": [{"code": k, "meaning": m, "date_label": d} for k, (m, d) in R.BRANCH_CODES.items()],
         "statuses": R.ALL_STATUSES, "lead_outcomes": R.LEAD_OUTCOMES, "rags": R.RAGS,
-        "tracker": {"owners": R.TRACKER_OWNERS, "outcomes": R.TRACKER_OUTCOMES},
+        "tracker": {"owners": R.TRACKER_OWNERS, "outcomes": R.TRACKER_OUTCOMES, "action_types": R.TRACKER_ACTION_TYPES,
+                    "reject_reasons": R.TRACKER_REJECT_REASONS},
     }
 
 
@@ -99,7 +100,16 @@ async def my_list(caller_id: uuid.UUID | None = None, user: User = Depends(requi
                                                            CallAllocation.caller_id == who,
                                                            CallAllocation.status == "open"))).scalars().all()
     today = await company_today(s, user.company_id)
-    return {"today": today, "items": await _rows_for(s, list(allocs), today)}
+    # 7.1: a lead gets two planned tries a day and leaves the list after them, but up to three may be recorded;
+    # those still in retry stay reachable today for that third try
+    done = (await s.execute(select(CallAllocation).where(CallAllocation.company_id == user.company_id,
+                                                         CallAllocation.caller_id == who, CallAllocation.run_date == today,
+                                                         CallAllocation.status == "done"))).scalars().all()
+    slots = (await load_settings(s, user.company_id)).max_slots_per_day
+    called_today = [r for r in await _rows_for(s, list(done), today)
+                    if r["status"] == R.IN_RETRY and r["call_group"] == "lead" and r["tries_today"] < slots
+                    and not (r["callback_date"] and r["callback_date"] > today)]
+    return {"today": today, "items": await _rows_for(s, list(allocs), today), "called_today": called_today}
 
 
 @router.post("/calls/entries/{entry_id}/attempts", status_code=201)

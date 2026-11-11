@@ -7,7 +7,7 @@ import uuid
 import pytest
 import pytest_asyncio
 
-TEST_DB = "fieldsync_test"
+TEST_DB = os.environ.get("TEST_DB_NAME", "fieldsync_test")  # a second name lets two test runs work side by side
 BASE_URL = os.environ.get(
     "TEST_DATABASE_SERVER", "postgresql+asyncpg://fieldsync:fieldsync_dev@localhost:5433"
 )

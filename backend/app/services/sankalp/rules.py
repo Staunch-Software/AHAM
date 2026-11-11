@@ -30,9 +30,16 @@ NC_BEING_CALLED = "Not called – number already being called"
 NC_SPOKEN = "Not called – spoken within 30 days"
 NC_KNOWN = "Not called – known contact"
 NOT_CALLED = [NC_NO_NUMBER, NC_REPEAT, NC_DUPLICATE, NC_BEING_CALLED, NC_SPOKEN, NC_KNOWN]
+# where an entry stands before any call (shown as its current status)
+WAITING_SELECTION = "Waiting for the daily selection"
+WAITING_FIRST_CALL = "Waiting for the first call"
+NOT_CALLED_EXISTING = "Not called – existing customer / applicant"
 
 IN_RETRY = "In retry"
 DISCARDED_9 = "Discarded – 9 unanswered"
+# The row statuses of calls that give no status: an unanswered try or a callback request on a lead. The entry keeps
+# the status of its latest call that gave one (Takeoff master, History: only "terminal" rows set the status).
+NO_STATUS_ROWS = {IN_RETRY, DISCARDED_9}
 DISCARDED_INVALID = "Discarded – invalid number"
 CLOSED_NO_ANSWER = "Closed – no answer"
 REJECTED_REFUSED = "Rejected – refused to talk"
@@ -65,6 +72,9 @@ ALL_STATUSES = NOT_CALLED + [IN_RETRY, DISCARDED_9, DISCARDED_INVALID, CLOSED_NO
 LEAD_OUTCOMES = [LOGGED_IN, OUTCOME_REJECTED, LOGIN_BEFORE_ENTRY]
 
 RAGS = ["PENDING", "NA", "RED", "AMBER", "RNR", "GREEN"]
+# what each RAG code is called on screens and in files ("RNR" was unclear to readers)
+RAG_LABELS = {"PENDING": "Not called yet", "NA": "Not applicable", "RED": "Red", "AMBER": "Amber",
+              "RNR": "No answer", "GREEN": "Green"}
 
 
 def is_validated(status: str | None) -> bool:
@@ -74,7 +84,7 @@ def is_validated(status: str | None) -> bool:
 # ---- Section 7.1: attempts ----
 SLOTS = ["09-10", "10-11", "11-12", "12-01", "01-02", "02-03", "03-04", "04-05", "05-06", "06-07"]
 CONNECTED = "Connected"
-RNR = "RNR"
+RNR = "Rang, no answer"  # "RNR" in the business-logic document
 BUSY = "Busy"
 SWITCHED_OFF = "Switched off"
 NOT_REACHABLE = "Not reachable"
@@ -99,6 +109,10 @@ PURPOSE = ["Discuss eligibility", "Collect documents", "Property visit"]
 OWN_CONTRIBUTION = ["Fully", "Partly", "Not yet", "Prefer not to say"]
 LAP_NEEDS = {"LAP", "BT + LAP"}
 NO_LOAN = "Not looking for a loan"
+# 7.2 as the call sheet asks them: these only for a loan (not LAP, BT + LAP or no loan), own contribution only for
+# a purchase or construction
+LOAN_QUESTIONS = ("timeline", "income", "documents", "next_step", "purpose")
+OWN_CONTRIBUTION_NEEDS = {"Home purchase", "Self-construction", "Plot + construction"}
 
 # ---- Section 7.3: DSA/CP group ----
 DSA_RAG = ["Green", "NA", "Amber", "Red"]
@@ -109,7 +123,14 @@ ACT_DSA_FOLLOWUP = "DSA/CP follow-up"
 ACT_VISIT = "Visit customer"
 ACT_COLLECT_DOCS = "Collect documents"
 ACT_FOLLOW_UP_LEAD = "Follow up lead"
-LEAD_ACTIONS = {ACT_VISIT, ACT_COLLECT_DOCS, ACT_FOLLOW_UP_LEAD}
+# given to the branch by the master owner on the follow-up tracker, or after a green-channel reject (Takeoff master)
+ACT_CONFIRM_LOGIN = "Confirmation of login required"
+ACT_GREEN_LOGIN = "Log in under green channel"
+ACT_BRANCH_FOLLOWUP = "Branch follow-up (mail sent)"
+ACT_SERVICE = "Service request"
+LEAD_ACTIONS = {ACT_VISIT, ACT_COLLECT_DOCS, ACT_FOLLOW_UP_LEAD, ACT_CONFIRM_LOGIN, ACT_GREEN_LOGIN}
+# what the branch answers with a code and a date (12.4): lead actions and the lead items the tracker gives the branch
+BRANCH_LEAD_ACTIONS = LEAD_ACTIONS | {ACT_BRANCH_FOLLOWUP, ACT_SERVICE}
 CC_CALLBACK = "Callback"
 CC_TAKE_FORWARD = "Take case forward"
 CC_FOLLOW_UP = "Follow-up"
@@ -118,7 +139,7 @@ CC_FOLLOW_UP = "Follow-up"
 BRANCH_CODES: dict[str, tuple[str, str | None]] = {
     "1": ("Logged in", None),
     "2": ("Category wrong", None),
-    "3": ("RNR: customer not answering the branch", None),
+    "3": ("Customer not answering the branch", None),
     "R1": ("Rejected: property or legal issue that cannot be cured", None),
     "R2": ("Rejected: eligibility or income", None),
     "R3": ("Rejected: credit score", None),
@@ -148,4 +169,10 @@ PURCHASE_NEEDS = {"Home purchase", "Plot + construction"}
 # ---- Section 13.3: tracker ----
 TRACKER_OWNERS = ["branch", "call_centre", "done"]
 TRACKER_RETURN_GREEN = "Return to branch – green channel"
-TRACKER_OUTCOMES = ["Reopen for calling", "Rejected", "Logged in", TRACKER_RETURN_GREEN]
+TRACKER_REOPEN = "Reopen for calling"
+TRACKER_OUTCOMES = [TRACKER_REOPEN, "Rejected", "Logged in", TRACKER_RETURN_GREEN]
+# the fixed lists of the Takeoff master's follow-up tracker
+TRACKER_ACTION_TYPES = [ACT_VISIT, ACT_COLLECT_DOCS, ACT_FOLLOW_UP_LEAD, ACT_CONFIRM_LOGIN, ACT_DSA_FOLLOWUP,
+                        ACT_CORRECT_NUMBER, ACT_BRANCH_FOLLOWUP, ACT_SERVICE, ACT_GREEN_LOGIN]
+TRACKER_REJECT_REASONS = ["Property / legal issue", "Eligibility / income", "Credit score", "Loan taken elsewhere",
+                          "Customer not interested", "Outside branch area", "Other"]

@@ -219,7 +219,7 @@ def test_login_outcomes_and_validation():
     base = att(answers=OK | {"loan_need": "Not looking for a loan"})  # Red
     after = E.derive(state(base, login=E.Login("T1", D + timedelta(days=5), "Home Loan", "register")), CFG, D)
     assert after.lead_outcome == R.LOGGED_IN and after.customer_validated and after.rag == "NA"
-    assert after.validated_on == D + timedelta(days=5)
+    assert after.validated_on == D  # the latest call that gave a status (Takeoff master), not the login date
     before = E.derive(state(base, login=E.Login("T1", D - timedelta(days=1), "Home Loan", "register")), CFG, D)
     assert before.lead_outcome == R.LOGIN_BEFORE_ENTRY and not before.customer_validated
     lap = E.derive(state(base, login=E.Login("T1", D + timedelta(days=5), "LAP", "register")), CFG, D)

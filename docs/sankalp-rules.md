@@ -47,18 +47,21 @@ tracker row and the login register by `ops.recompute()`, which runs after every 
   the selection checks are not run again for the new number.
 - Two entries by one SO in the same second: the second Entry ID gets `-2`.
 - An entry whose phone clock was more than 5 minutes ahead of the server is flagged "check the time" for the monitor.
-- Every call produces a row status (section 8 literally): a later unanswered follow-up call on a validated lead puts
-  it back "In retry" until the customer is reached again.
-- A call-centre action (callback, take case forward, follow-up) stays open 14 days from its date.
+- Only a call that gives a status sets the entry's status (Takeoff master): connected, invalid number, wrong person,
+  refused to talk, or a DSA/CP closed. An unanswered try or a callback request on a lead gives none, so a validated
+  lead stays validated when a later follow-up call is not answered. Until a call gives a status the entry is "In
+  retry" (or "Discarded – 9 unanswered" after the last allowed try).
+- On the call-centre side only a callback runs out (14 days after its date); a case taken forward and a follow-up stay
+  until done (Takeoff master).
 
 Added with the feature-review fixes (2026-11-01, `docs/feature-review.md`), each still for Aham to confirm:
-- A DSA/CP contact who asks to be called back gets that date as one more calling day (7.1 vs "one day only").
+- A DSA/CP gets one try: a callback request closes it ("Closed – no answer"), as in the Takeoff master.
 - A DSA/CP contact who said he needs a home loan himself is called as a lead from then on (Lead questions, 2 tries a
   day, up to 9 unanswered); the conversion holds on later calls unless the caller answers "No".
 - A lead that an earlier call validated and a later call finds "Not looking for a loan" keeps the status Red (8.1)
   but its RAG is NA: section 9's "a lost lead is NA, not Red". (19.1, which calls change the status at all, is
   still open.)
-- "Validated on" is the date of the first call that validated the entry.
+- "Validated on" is the date of the latest call that gave a status (Takeoff master).
 - The lead card's handling branch works the lead: its BM (or its RBH where it has no BM) answers it and its missed
   dates count there; the SO's branch keeps the credit, compliance and dashboards.
 - The RBH corrects a customer number where the branch has neither a BM nor an RTM (as it answers leads there).
@@ -71,11 +74,57 @@ Added with the feature-review fixes (2026-11-01, `docs/feature-review.md`), each
 - An entry made while the phone's clock was behind its last contact with the server (set back by hand) is flagged
   "check the time", like a clock that is ahead.
 
+Added with the second review and the client's demo feedback (2026-11-09), each still for Aham to confirm:
+- **One current status** per entry on every screen and file: the login outcome when there is one, else the latest
+  call's status (with "2 unanswered" or "call back on …" for In retry), else the selection result. Earlier statuses
+  stay in the entry's History.
+- **A converted lead is not entered again:** an entry is refused (by any SO, on the phone while typing and on the
+  server) when an earlier entry for the same mobile number has a TCS lead ID or a login. A validated lead without a
+  lead ID is not a converted lead.
+- **Bulk entries** (HR & Admin → Uploads, monitor and admin only): the same checks as the phone; the Entry ID comes
+  from the date and time met; no GPS ("bulk upload"); a row already uploaded is not added twice.
+- **A follow-up sent to the call centre** (branch date more than 14 days out, or the tracker) is done once the call
+  centre has called on or after its date; the lead then goes back to the branch. If it runs out unworked, the lead
+  keeps its branch action (a lead action never expires).
+- **PRIORITY** (branch code 3, "Reopen for calling", immediate call-back) and a **corrected number** go on today's
+  list at once, to the caller who first handled the entry (or the branch's caller of the day).
+- A lead's planned 2 tries take it off the list; up to 3 can be recorded, so it stays reachable under "Called today"
+  for a third try that day. A corrected number's tries start afresh (today's tries on the old number do not count).
+- The "repeat entry by same SO" check compares every earlier entry with that number, including entries never
+  selected (dated before the first call date, or Existing Customer / Applicant).
+- A Sankalp success tie on the same date goes to the lower Entry ID (11.3 as written), even if that entry was a
+  duplicate that was never called.
+- The call outcome "RNR" is written "Rang, no answer"; the RAG "RNR" is shown as "No answer".
+
+Aligned with Aham's Takeoff master workbook (Excel, Oct 2026) on 2026-11-11, where it was silent in the document or
+differed from it:
+- The login register accepts the MIS file's own column names ("Applicant Contact No (Customer)", "Product Type").
+- Status: only a call that gives one sets it (see above); a validated lead stays validated after an unanswered call.
+- Follow-up tracker: Action type and Reject reason are the master's fixed lists. Owner = Branch gives the branch the
+  action type ("Branch follow-up (mail sent)" when none) on the follow-up date, kept until the tracker changes;
+  Owner = Call centre puts a follow-up on the call centre's list (on the follow-up date, or now); Owner = Done closes.
+- A green-channel R2/R3 sent back to the branch (Green channel page or tracker) gives the branch "Log in under green
+  channel".
+- Call screen: Timeline, Income, Documents, Next step and Purpose are asked only for a loan (not LAP, BT + LAP or "Not
+  looking for a loan"); Own contribution only for Home purchase, Self-construction, Plot + construction.
+- "Spoken to within 30 days" means fewer than 30 days before the run date.
+- A DSA/CP callback request closes it (see above).
+- A call-centre follow-up goes to the tracker's caller, else the caller who created the lead ID, else the first caller.
+- Reopened for calling (branch code 3, tracker "Reopen for calling", immediate call-back): the entry shows "In retry –
+  PRIORITY" and is called first every day until a call gives a status after the reopen (or the tries run out).
+- "Validated on" is the date of the latest call that gave a status.
+- Take case forward and call-centre follow-ups do not expire; callbacks do (14 days).
+- A login validates an entry ("Customer validated") only when it is the Sankalp success for that TCS ID (and not LAP,
+  not a repeat). An entry validated on a call stays validated.
+Kept as the document says (the Excel differs): a LAP login never validates (11.3); a lost lead is NA, not Red (9);
+the repeat check uses the SO now on the entry, not the Emp ID in the Entry ID.
+
 ## [Aham to decide]: settings with today's behaviour as default
 | Open point | Setting / place | Default |
 |---|---|---|
 | Same-day calling (5.2) | Settings: *Allow same-day calling* | Off |
 | Duplicate TCS IDs in the register (11.1) | Settings: *A TCS ID repeated in the login register* | The latest row wins |
+| An SO with no attendance row (3, 4.5) | Settings: *A Sales Officer with no attendance row that day* | Counted as present ("not marked") |
 | Madurai: RoTN U or RoTN C (section 3) | Organization: move the branch | RoTN U (call-centre allocation) |
 | Krishnagiri: RoTN C or Chennai (Annex A) | Organization: move the branch | RoTN C |
 | Payout rule (section 10) | not built: the app produces the flags only | — |

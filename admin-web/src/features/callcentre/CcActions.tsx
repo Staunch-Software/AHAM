@@ -5,6 +5,7 @@ import { api, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
 import { useState } from 'react'
 import type { EntryRow, Page } from '../../types'
+import { allPages } from '../../services/exporting'
 import { EntryTable } from '../entries/EntryList'
 
 /** 12.2: callbacks, cases to take forward and follow-ups, by date. Due ones go on the lists in the daily run. */
@@ -18,7 +19,7 @@ export default function CcActions() {
       <ErrorBox error={error ? errorMessage(error) : null} />
       <Card flush>
         {isLoading ? <Skeleton className="m-5 h-24" /> : !data?.items.length ? <EmptyState icon={<Headphones size={20} />} title="No open call-centre actions." />
-          : <><EntryTable rows={data.items} link={(r) => path(`entries/${r.id}`)} /><Pager page={page} pageSize={100} total={data.total} onChange={setPage} /></>}
+          : <><EntryTable rows={data.items} link={(r) => path(`entries/${r.id}`)} exportName="Call-centre actions" exportAll={() => allPages<EntryRow>('/calls/actions')} /><Pager page={page} pageSize={100} total={data.total} onChange={setPage} /></>}
       </Card>
     </>
   )

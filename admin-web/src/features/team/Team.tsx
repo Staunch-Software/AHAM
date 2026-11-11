@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Avatar, Badge, Card, EmptyState, ErrorBox, Input, PageTitle, Pager, Select, Skeleton, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
+import { allPages } from '../../services/exporting'
 import { useAuth } from '../../services/auth'
 import { nameOf, useBranches, useRoles } from '../../services/meta'
 import type { Employee, Page } from '../../types'
@@ -39,7 +40,10 @@ export default function Team() {
         {isLoading || !data ? <div className="space-y-2 p-5">{Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-10" />)}</div>
           : data.items.length === 0 ? <EmptyState icon={<Users size={20} />} title="No one found." />
             : (
-              <Table head={['Name', 'Role', 'Branch', 'Spoke', 'Joined', 'Left', 'Status']}>
+              <Table head={['Name (Emp ID)', 'Role', 'Branch', 'Spoke', 'Joining date', 'Exit date', 'Account status']} exportName="Team"
+                exportAll={async () => (await allPages<Employee>('/employees', { q: q || undefined, role: role || undefined })).map((u) => [
+                  `${u.full_name} (${u.employee_code})`, `${label(u.role)}${u.designation ? ` · ${u.designation}` : ''}`, nameOf(branches, u.branch_id),
+                  u.spoke, u.joining_date, u.exit_date, u.status])}>
                 {data.items.map((u) => (
                   <tr key={u.id}>
                     <Td><div className="flex items-center gap-3"><Avatar name={u.full_name} size="sm" /><div>

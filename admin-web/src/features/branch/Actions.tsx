@@ -6,6 +6,7 @@ import { api, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
 import { useMeta } from '../../services/meta'
 import type { EntryRow, Page } from '../../types'
+import { allPages } from '../../services/exporting'
 import { EntryTable } from '../entries/EntryList'
 
 const KINDS = [
@@ -44,7 +45,8 @@ export default function Actions() {
         {isLoading ? <div className="space-y-2 p-5">{Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-10" />)}</div>
           : rows.length === 0 ? <EmptyState icon={<ClipboardList size={20} />} title={view === 'expired' ? 'Nothing expired.' : 'Nothing open.'} />
             : <>
-              <EntryTable rows={rows} link={(r) => path(`entries/${r.id}`)} />
+              <EntryTable rows={rows} link={(r) => path(`entries/${r.id}`)} exportName={view === 'expired' ? 'Expired actions' : 'Open actions'}
+                exportAll={() => allPages<EntryRow>('/branch/actions', { expired: view === 'expired' || undefined, action: kind || undefined })} />
               <Pager page={page} pageSize={PAGE} total={data?.total ?? 0} onChange={setPage} />
             </>}
       </Card>

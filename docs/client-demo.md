@@ -19,7 +19,7 @@ week, the same names happen on the same weekdays; only the dates move.
 ## Before the meeting
 
 **1. Fresh demo data on the morning of the demo** (it rebuilds "last week" relative to that day). In
-`C:\Staunch\fieldsync`:
+`C:\Staunch\AHAM\AHAM`:
 ```bash
 docker compose down -v
 ```
@@ -57,7 +57,7 @@ All demo accounts use the password in `SEED_PASSWORD` (file `.env`). Each portal
 can hold all three portals.
 
 **3. The phone.**
-- Install `mobile/dist/aham-sankalp-1.2.0.apk`. Put the phone on the **same Wi-Fi as the PC**.
+- Install `mobile/dist/aham-sankalp-1.3.0.apk`. Put the phone on the **same Wi-Fi as the PC**.
 - Point the app at the PC's address of the day ("Phone and network" at the end, 1 minute).
 - The database was wiped, so clear the app's old data first: Android Settings → Apps → AHAM Sankalp → Storage →
   **Clear storage**.
@@ -116,7 +116,7 @@ box." HR & Admin (monitor) → **Entries** → search **Venkata Ramana** → ope
 | Action to branch / call centre | Next step "SO / branch visit" → branch action. "Branch answers": Suresh Reddy, Wednesday, A1 (KYC pending), login date Friday |
 | (7) Login confirmed | "Outcome and flags": **Logged in**, TCS ID 4851203, login date Friday, **Sankalp success**. From the MIS register uploaded on Saturday (Uploads → history) |
 
-- **Point out** the RAG: he is **NA** now because he logged in, so nothing is pending (section 9). For a Green lead,
+- **Point out** the RAG: he is **Not applicable** now because he logged in, so nothing is pending (section 9). For a Green lead,
   open **Kavitha Devi**.
 - **Say:** "A lead ID is not a login." Kavitha Devi has a lead ID (TCS-L-415577) but no login, so she is still open.
   Only the register (or a TCS ID the Master owner types) logs a lead in.
@@ -305,7 +305,7 @@ which entries are fresh, and 5.3 runs seven checks in a fixed order. The first c
 | Existing Customer, Existing Applicant | never called |
 
 - **Show:** monitor → **Entries** → Category filter **Existing Customer**. Each says **"Not called (existing customer
-  / applicant)"**, RAG **NA**. The dashboard counts them the same way.
+  / applicant)"**, RAG **Not applicable**. The dashboard counts them the same way.
 - A **fresh** entry: has an Entry ID, was never selected, has a call group, its entry date is on or after the first
   call date (24 Sep, a setting), and its entry date is **before** the run date. Same-day calling is Off.
 
@@ -451,17 +451,17 @@ It opens because the loan need is a loan type. Fill a few fields to show the rul
   anything; only the login register confirms a login (section 11). And no more mail to the branch: the lead is on
   the branch's own list (section 12)."
 
-Back on **My calls**: Ramesh Chowdary has left Divya's list. On Daily run, Divya's **Tries today** is now 1.
+Back on **My calls**: Ramesh Chowdary has left Divya's list. On Daily run, Divya's **Calls made today** is now 1.
 
 ### Step 4 (optional, 30 s): a DSA/CP gets one try
-New entries → **Rambabu Yadav** (DSA/Connector, Vijayawada). The card says **"DSA/CP group: 1 try, one day"**. Outcome **RNR** →
+New entries → **Rambabu Yadav** (DSA/Connector, Vijayawada). The card says **"DSA/CP group: 1 try, one day"**. Outcome **Rang, no answer** →
 **Save try** → **"Saved: Closed – no answer"**. One unanswered try closes a DSA/CP; a Lead would stay for 9.
 
 ### Prepared examples (Geetha's window → Entries → search the name → the Calls box)
 | Example | What it shows (7.1, 7.3) |
 |---|---|
-| **Prasad Varma** (Ravi's entry, 26 Oct) | 9 tries: two a day Tue–Fri, one on Sat, all unanswered → **Discarded – 9 unanswered**, RAG RNR |
-| **Balaji Constructions** (DSA/Connector) | one try, RNR → **Closed – no answer** |
+| **Prasad Varma** (Ravi's entry, 26 Oct) | 9 tries: two a day Tue–Fri, one on Sat, all unanswered → **Discarded – 9 unanswered**, RAG No answer |
+| **Balaji Constructions** (DSA/Connector) | one try, Rang, no answer → **Closed – no answer** |
 | **Rajesh Kumar** | Tue 27 Oct **Callback requested** for Thu 29 Oct; back on the list Thursday → Connected → **Validated** |
 | **Sri Sai Cements** (Contact Point, Nellore) | "Needs a home loan himself?" **Yes** → the Lead questions → **Validated – converted from DSA/CP**, with a lead card |
 
@@ -535,44 +535,44 @@ override the **RAG** (section 9), not the status.
 the managers what to do about it."
 
 ### Step 1: the picture
-Monitor → **Dashboard** → **Last week**: the RAG mix of about 382 entries (by count date). Roughly Green 131, NA 110,
-Pending 43, RNR 38, Amber 35, Red 25. **Say:** "Green: work in progress. Amber: the SO must fix something. Red: the
-customer said no. RNR: we could not reach them. NA: nothing to do. Pending: not called yet."
+Monitor → **Dashboard** → **Last week**: the RAG mix of about 382 entries (by count date). Roughly Green 131, Not applicable 110,
+Not called yet 43, No answer 38, Amber 35, Red 25. **Say:** "Green: work in progress. Amber: the SO must fix something. Red: the
+customer said no. No answer: we could not reach them. Not applicable: nothing to do. Not called yet: waiting for the first call."
 
 ### Step 2: the table of section 9, one real entry per row
 Master owner → **Entries** → search the name (or use the **RAG** filter):
 
 | Status | RAG | Search |
 |---|---|---|
-| Not called yet / waiting | **Pending** | **Naga Babu Basha** (Saturday, on Divya's list) |
-| Not called (repeat, duplicate, known contact, …) | **NA** | **Suresh Babu**: his second entry, "repeat entry by same SO" |
+| Not called yet / waiting | **Not called yet** | **Naga Babu Basha** (Saturday, on Divya's list) |
+| Not called (repeat, duplicate, known contact, …) | **Not applicable** | **Suresh Babu**: his second entry, "repeat entry by same SO" |
 | Red / DSA/CP – Red | **Red** | **Seshu Raju** / **Gopal Reddy** |
 | Amber statuses, DSA/CP – Amber, Discarded – invalid number | **Amber** | **Durga Prasad** (wrong person), **Gopal Kolli** (DSA/CP – Amber), **Nagaraju Rao** (invalid number) |
-| In retry, at least one unanswered | **RNR** | **Satyanarayana Varma** (8 unanswered) |
+| In retry, at least one unanswered | **No answer** | **Satyanarayana Varma** (8 unanswered) |
 | In retry, none unanswered | **Green** | none right now; **Rajesh Kumar** was, from his callback request on Tuesday to Thursday's call |
-| Discarded, Closed – no answer | **RNR** | **Prasad Varma**, **Balaji Constructions** |
-| DSA/CP – Green / DSA/CP – NA | **Green** / **NA** | **Mahesh Prasad** / **Balaji Sand Suppliers** |
+| Discarded, Closed – no answer | **No answer** | **Prasad Varma**, **Balaji Constructions** |
+| DSA/CP – Green / DSA/CP – NA | **Green** / **Not applicable** | **Mahesh Prasad** / **Balaji Sand Suppliers** |
 | Any other status with an open action | **Green** | **Siva Kumar**: Validated, "Visit customer" open |
-| Otherwise | **NA** | **Sireesha Chowdary**: Already in process, nothing open |
-| Logged in or rejected (checked first) | **NA** | **Venkata Ramana**: Validated, then logged in |
+| Otherwise | **Not applicable** | **Sireesha Chowdary**: Already in process, nothing open |
+| Logged in or rejected (checked first) | **Not applicable** | **Venkata Ramana**: Validated, then logged in |
 
 "Not called – no valid number" would be Amber, but it cannot happen: the phone refuses an invalid number.
 
 ### Step 3: the three special cases
-- **A lost lead is NA, not Red. Krishna Murthy:** Validated on Tue 27 Oct; on Wed 28 Oct he said "Took a loan from a
-  local bank last week" → status **Red**, RAG **NA**. **Say:** "Red is for a customer who was never real or never
+- **A lost lead is Not applicable, not Red. Krishna Murthy:** Validated on Tue 27 Oct; on Wed 28 Oct he said "Took a loan from a
+  local bank last week" → status **Red**, RAG **Not applicable**. **Say:** "Red is for a customer who was never real or never
   wanted a loan, which is the SO's problem. A lost lead is not the SO's fault."
 - **The Master owner's override wins. Anjali Devi:** status **Red**, but the RAG shows **Amber\*** (hover: "Set by the
   master owner"). Open the **Follow-up tracker**: RAG override **AMBER**, note "Son may need a loan after the harvest;
   check in January". The automatic RAG is kept underneath; clearing the override brings Red back.
-- **Logged in or rejected is NA**, before everything else: Venkata Ramana above.
+- **Logged in or rejected is Not applicable**, before everything else: Venkata Ramana above.
 
 ### Step 4: what the SO sees
 - **Amber = something to fix within 15 days of the entry.** **Durga Prasad** (Padma Priya's entry, 29 Oct): Amber –
   wrong person → the SO action **"Correct customer number"**, open until **13 Nov**. It is on Padma's phone (Today →
   the numbers to give to the BM), and the BM or RTM can correct it (section 13).
-- On the phone: **My entries** shows each entry's RAG; **Today → Last 30 days** counts Green, Amber, Red, RNR, Pending
-  and NA for that SO.
+- On the phone: **My entries** shows each entry's RAG; **Today → Last 30 days** counts Green, Amber, Red, No answer, Not called yet
+  and Not applicable for that SO.
 
 ## Section 10: incentive flags (5 min, one live upload)
 **Say:** "The app doesn't calculate money. It gives the incentive team four flags per entry, and they apply the
@@ -583,9 +583,9 @@ Master owner → Entries → **Venkata Ramana** → **Outcome and flags**:
 
 | Flag | Rule (section 10) | Venkata Ramana |
 |---|---|---|
-| **Customer validated** | A "Validated…" status (all four kinds), **or** logged in and not LAP; never a repeat by the same SO | Yes |
+| **Customer validated** | A "Validated…" status (all four kinds), **or** the Sankalp success for its TCS ID (logged in, not LAP); never a repeat by the same SO | Yes |
 | **First validation for this number** | The earliest validated entry for that mobile, from any SO: paid once per customer | Yes |
-| **Validated on** | The date of the call that validated it | Tue 27 Oct |
+| **Validated on** | The date of the latest call that gave a status | Tue 27 Oct |
 | **Counts as Sankalp success** | Section 11.3 (next section) | Yes |
 
 ### Step 2: each rule, on a real entry
@@ -646,7 +646,7 @@ flags**):
 | **Venkata Ramana** | Logged in | TCS 4851203, login Fri 30 Oct, after his entry (Mon 26 Oct). Matched on the **second** number in the cell: his entry has 63276 81069 |
 | **Lakshmi Narayana** | Logged in, TCS 4851377 **(entered by hand)** | The register had his wife's mobile, so the Master owner typed the TCS ID on the follow-up tracker (Fri 30 Oct). A typed TCS ID counts as a login; there is no login date |
 | **Usha Rani** | Login on/before entry date (not counted) | Register login Mon 26 Oct (a branch walk-in); the SO met her Tue 27 Oct. Her call still validated her, but the login is not a Sankalp success |
-| **Gopi Krishna** | Rejected | Master owner's tracker: "Chose another lender (SBI)" |
+| **Gopi Krishna** | Rejected | Master owner's tracker: reject reason "Loan taken elsewhere" (note: chose SBI) |
 | **Hymavathi Chowdary** | Rejected | Branch answer R5, customer not interested |
 
 Lead outcome applies only to lead-type entries: the Lead group, DSA/CP converted to a lead, or entries with a lead
@@ -717,8 +717,8 @@ Prepared answers for the other codes (search in Entries):
 |---|---|---|
 | 1 Logged in | **Seshu Naidu** | The branch says logged in, but the lead stays open until the login register shows it |
 | 2 Category wrong | **Ramu Yadav**, **Sambasiva Rao** | Sent to the monitor's Review queues (section 13) |
-| 3 RNR | **Swathi Reddy**, **Mohan Krishna** | Not answering the branch: the call centre retries at once, as PRIORITY (section 6) |
-| R5 | **Hymavathi Chowdary** | Rejected: the lead closes, RAG NA |
+| 3 Customer not answering | **Swathi Reddy**, **Mohan Krishna** | Not answering the branch: the call centre retries at once, as PRIORITY (section 6) |
+| R5 | **Hymavathi Chowdary** | Rejected: the lead closes, RAG Not applicable |
 
 ### Step 3: the green channel, live
 **Say:** "For small loans the branch cannot reject on income (R2) or credit score (R3). Self-construction up to ₹8
@@ -728,7 +728,7 @@ lakh and purchase up to ₹15 lakh, on the call centre's loan amount. Head offic
 - **Kavitha Devi** (₹12 lakh home purchase, Ravi's lead): R3 on Friday. Suresh Reddy's row says **"green-channel check
   pending"**.
   - **Live:** Geetha → **Green channel** → Kavitha Devi → **Back to branch**. Suresh Reddy's row loses "check
-    pending", and the lead stays open with the branch.
+    pending", and the lead's action becomes **"Log in under green channel"**.
   - "Accept reject" would close it as rejected instead.
 
 ### Step 4: a branch without a BM
@@ -788,7 +788,7 @@ Four rows:
 | Entry | What Geetha set | Effect |
 |---|---|---|
 | **Siva Kumar** | Owner Call centre, **Reopen for calling** ("Loan need not asked; call again") | Called again next day → Validated |
-| **Gopi Krishna** | Owner Done, **Rejected**, reason "Chose another lender (SBI)" | Lead closed, RAG NA |
+| **Gopi Krishna** | Owner Done, **Rejected**, reason "Loan taken elsewhere" (from the fixed list; note: chose SBI) | Lead closed, RAG Not applicable |
 | **Lakshmi Narayana** | Owner Done, **Logged in**, TCS ID 4851377 | Counts as a login (section 11) |
 | **Anjali Devi** | **RAG override Amber** ("Son may need a loan after the harvest") | Shows Amber* instead of Red (section 9) |
 
@@ -823,11 +823,9 @@ Already shown in section 0. Optionally:
 
 ## Decisions we need from Aham
 **Before go-live (important)**
-1. **Which calls change a lead's status** (19.1)? Today every call does. A validated lead whose follow-up call is
-   unanswered goes back to "In retry", and "Customer validated" switches off until someone reaches the customer.
-   - Options: keep it;
-   - only connected calls change a validated lead;
-   - follow-up calls never change it.
+1. **Which calls change a lead's status** (19.1)? *Answered by the Takeoff master and built that way:* only a call
+   that gives a status (connected, invalid number, wrong person, refused); an unanswered follow-up call keeps a
+   validated lead validated. Confirm.
 2. **Which entries compete for the Sankalp success** (23.1)? Today every entry with the matching number does. If an
    Existing Customer / Applicant or DSA/CP entry is the earliest, no entry gets the success.
 3. **Last weeks' history** (since 22 Sep): import the Excel workbooks or not? The 30-day, known-contact,
@@ -841,6 +839,8 @@ Already shown in section 0. Optionally:
 
 **Rules to confirm** (the app follows the reading in brackets)
 - Same SO, two entries in the same second (the second gets "-2").
+- Sankalp success when two entries of one TCS ID are on the same date: the lower Entry ID wins (11.3 as written),
+  even if that entry was a duplicate that was never called. Should the earlier time, or the called entry, win?
 - "+91 0…" numbers (refused; retype without the 0).
 - An SO with no attendance row (counted as present, "not marked").
 - A frozen copy of each day's compliance (no; the report is live, and late offline entries still count).
@@ -874,7 +874,7 @@ Already shown in section 0. Optionally:
 The app talks to the server on this PC over the Wi-Fi. The Wi-Fi gives the PC a new address from time to time (it
 changed between 2 and 3 November), so the app lets you type the PC's current address.
 
-**App:** `mobile/dist/aham-sankalp-1.2.0.apk`. Install it the day before; it replaces the app already there and keeps
+**App:** `mobile/dist/aham-sankalp-1.3.0.apk`. Install it the day before; it replaces the app already there and keeps
 its data. Its built-in address is `192.168.14.106` (the PC on 3 November).
 
 **On the demo day, with the PC and the phone on the same Wi-Fi:**

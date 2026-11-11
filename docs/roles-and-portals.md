@@ -12,16 +12,20 @@ Product Manager → Business Manager. Sales Officer designations RO, RM and ABM 
 | Role | Portal | Sees | Can also |
 |---|---|---|---|
 | Sales Officer | Mobile app | own entries | make entries |
-| Branch Manager | Management | own branch (plus any extra branches assigned) | answer leads (12.4), correct numbers, correct the SO if the branch has no cluster |
-| Cluster Manager (RTM) | Management | branches of the cluster | correct numbers and SOs |
-| Region Manager (RBH) | Management | branches of the region | answer leads of branches with no BM; correct numbers where a branch has neither BM nor RTM |
-| Product Manager | Management | all | export compliance |
-| Business Manager | Management | all | export compliance |
+| Branch Manager | Management | own branch (plus any extra branches assigned) | answer leads (12.4), correct numbers, correct the SO if the branch has no cluster, IRR report |
+| Cluster Manager (RTM) | Management | branches of the cluster | correct numbers and SOs, IRR report |
+| Region Manager (RBH) | Management | branches of the region | answer leads of branches with no BM; correct numbers where a branch has neither BM nor RTM; IRR report |
+| Product Manager | Management | all | export compliance, IRR report |
+| Business Manager | Management | all | export compliance, IRR report |
 | Caller | Call centre | entries on their list | record calls, lead card |
 | Master owner | Call centre | all | daily run, caller of the day, assign work, tracker, RAG override, manual TCS ID, green channel, login register |
-| Sankalp monitor (HR) | HR & Admin | all | roster / attendance / holidays (and the employee roster page), category reviews, correct SOs, compliance and Takeoff exports, audit log |
-| MIS (Credit / Ops) | HR & Admin | — | upload the login register |
-| System admin | HR & Admin | all (read) | users and roles, organization, settings, CP sub-types, uploads, audit log |
+| Sankalp monitor (HR) | HR & Admin | all | roster / attendance / holidays / bulk entries (and the employee roster page), category reviews, correct SOs, compliance and Takeoff exports, audit log |
+| MIS (Credit / Ops) | HR & Admin | — | upload the login register; IRR: upload the Disbursement Register, fix exceptions, settings, report |
+| System admin | HR & Admin | all (read) | users and roles, organization, settings, CP sub-types, uploads (bulk entries too), audit log, IRR (all of it) |
+
+Every table on every page has **Export: CSV · Excel** (a paged list exports all its rows). The IRR module
+(`docs/irr-module.md`) uses two permissions of its own: `irr.view` (BM, RTM, RBH, Product and Business Manager, MIS,
+System admin, each in their own scope) and `irr.manage` (MIS, System admin).
 
 Scope is by **branch**: an entry belongs to the branch of its SO (from the roster) and its region follows the branch, so
 moving a branch to another region moves its entries' scope with it.

@@ -8,6 +8,7 @@ from app.models.calling import (  # noqa: F401
     LoginRegisterRow,
     SelectionRun,
 )
+from app.models.irr import Disbursement, IrrSettings  # noqa: F401
 from app.models.org import (  # noqa: F401
     AuditLog,
     Branch,

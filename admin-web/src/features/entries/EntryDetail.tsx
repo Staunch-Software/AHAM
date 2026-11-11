@@ -57,12 +57,11 @@ export default function EntryDetail() {
         <div className="min-w-0">
           <p className="font-mono text-sm font-semibold text-brand-700" data-testid="entry-code">{e.entry_code}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-brand-900">{e.person_name}</h1>
-          <p className="mt-1 text-sm text-slate-500">{e.category_label}{e.cp_subtype_label && ` · ${e.cp_subtype_label}`} · <span className="tabular">{e.phone}</span> · met by {e.so_name} ({e.so_employee_code}), {e.branch_name}</p>
+          <p className="mt-1 text-sm text-slate-500">{e.category_label}{e.cp_subtype_label && ` · ${e.cp_subtype_label}`} · Mobile: <span className="tabular">{e.phone}</span> · met by {e.so_name} ({e.so_employee_code}), {e.branch_name}{e.source === 'import' && ' · entered by bulk upload, not on the phone'}</p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <RagBadge value={e.rag} overridden={e.rag_overridden} />
-            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs"><StatusText status={e.status} selection={e.selection_status} callGroup={e.call_group} /></span>
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs" data-testid="current-status"><StatusText value={e.current_status} /></span>
             {e.priority && <span className="inline-flex items-center gap-1 rounded-full bg-roof-50 px-2.5 py-0.5 text-xs font-semibold text-roof-700"><Flag size={12} aria-hidden="true" />PRIORITY</span>}
-            {e.lead_outcome && <span className="rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-semibold text-sky-700">{e.lead_outcome}</span>}
             {e.sankalp_success && <span className="rounded-full bg-gold-100 px-2.5 py-0.5 text-xs font-semibold text-gold-800">Sankalp success</span>}
           </div>
         </div>
@@ -125,7 +124,7 @@ export default function EntryDetail() {
 
       <Card title="Calls" className="mt-6" flush actions={<span className="text-xs text-slate-500">Cycle {e.call_cycle} · {e.unanswered_count} unanswered · first caller {e.first_caller ?? '—'}</span>}>
         {e.attempts.length === 0 ? <p className="px-5 pb-5 text-sm text-slate-500">{e.on_list_of.length ? `On the list of ${e.on_list_of.map((a) => a.caller ?? 'no caller yet').join(', ')} (${e.on_list_of[0]!.kind}).` : 'Not called yet.'}</p> : (
-          <Table head={['Date', 'Slot', 'Outcome', 'Status it produced', 'Caller', 'Next date']}>
+          <Table head={['Call date', 'Time slot', 'Call outcome', 'Status after this call', 'Caller', 'Next date']} exportName="Calls">
             {e.attempts.map((a) => (
               <tr key={a.id}><Td className="whitespace-nowrap">{a.call_date}{a.cycle > 1 && <span className="ml-1 text-xs text-slate-400">(cycle {a.cycle})</span>}</Td><Td>{a.slot}</Td><Td>{a.outcome}</Td>
                 <Td>{a.row_status}</Td><Td>{a.caller}</Td><Td>{a.next_date ?? (a.answers?.next_date as string) ?? '—'}</Td></tr>

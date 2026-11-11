@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Card, Dialog, EmptyState, ErrorBox, Field, Input, PageTitle, Pager, Select, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
+import { allPages } from '../../services/exporting'
 import { useAuth } from '../../services/auth'
 import { fmtServer } from '../../services/format'
 import { useMeta } from '../../services/meta'
@@ -49,15 +50,17 @@ export default function Queues() {
       <ErrorBox error={[cat.error, time.error].map((e) => e && errorMessage(e)).find(Boolean) ?? null} />
       <Card title="Category wrong (branch code 2)" flush>
         {!cat.data?.items.length ? <EmptyState icon={<Shapes size={20} />} title="Nothing to review." /> : (
-          <Table head={['Entry', 'Person', 'Category now', 'SO', '']}>
-            {cat.data.items.map((r) => <tr key={r.id}><Td>{link(r)}</Td><Td>{r.person_name}</Td><Td>{r.category_label}</Td><Td>{r.so_name} · {r.branch_name}</Td><Td><Button small onClick={() => setEditing(r)}>Review</Button></Td></tr>)}
+          <Table head={['Entry ID', 'Person met (mobile number)', 'Category now', 'Sales Officer', '']} exportName="Category to review"
+            exportAll={async () => (await allPages<EntryRow>('/monitor/category-review')).map((r) => [r.entry_code, `${r.person_name} · Mobile ${r.phone}`, r.category_label, `${r.so_name} · ${r.branch_name}`])}>
+            {cat.data.items.map((r) => <tr key={r.id}><Td>{link(r)}</Td><Td>{r.person_name}<div className="tabular text-xs text-slate-500">Mobile: {r.phone}</div></Td><Td>{r.category_label}</Td><Td>{r.so_name} · {r.branch_name}</Td><Td><Button small onClick={() => setEditing(r)}>Review</Button></Td></tr>)}
           </Table>
         )}
         {!!cat.data?.items.length && <Pager page={catPage} pageSize={100} total={cat.data.total} onChange={setCatPage} />}
       </Card>
       <Card title="Check the time" subtitle="The phone’s clock was ahead of the server, or had been set back since the phone last reached the server" className="mt-6" flush>
         {!time.data?.items.length ? <EmptyState icon={<Clock size={20} />} title="No entries with a suspicious time." /> : (
-          <Table head={['Entry', 'SO', 'Phone time', 'Received']}>
+          <Table head={['Entry ID', 'Sales Officer', 'Time on the phone’s clock', 'Received by the server at']} exportName="Entries to check the time"
+            exportAll={async () => (await allPages<EntryRow>('/monitor/time-flags')).map((r) => [r.entry_code, r.so_name, fmtServer(r.submitted_at_device), fmtServer(r.received_at_server)])}>
             {time.data.items.map((r) => <tr key={r.id}><Td>{link(r)}</Td><Td>{r.so_name}</Td><Td>{fmtServer(r.submitted_at_device)}</Td><Td>{fmtServer(r.received_at_server)}</Td></tr>)}
           </Table>
         )}

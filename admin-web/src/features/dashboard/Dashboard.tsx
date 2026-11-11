@@ -123,7 +123,7 @@ export default function Dashboard() {
 
           <Card title="Branches" className="mt-6" flush>
             {data.branches.length === 0 ? <EmptyState icon={<ListChecks size={20} />} title="No entries in this period." /> : (
-              <Table head={['Branch', 'Region', 'SOs', 'Entries', 'Lead/Prospect', 'Validated', 'Logged in', 'Green', 'Amber', 'Red']}>
+              <Table head={['Branch', 'Region', 'Sales Officers', 'Entries', 'Lead / Prospect entries', 'Validated', 'Logged in', 'Green', 'Amber', 'Red']} exportName="Branches">
                 {data.branches.map((b) => (
                   <tr key={b.branch_id}>
                     <Td className="font-medium text-slate-900">{b.branch}</Td><Td>{b.region ?? '—'}</Td><Td className="tabular">{b.sos}</Td>

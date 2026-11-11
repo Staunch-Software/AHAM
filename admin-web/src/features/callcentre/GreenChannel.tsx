@@ -26,7 +26,7 @@ export default function GreenChannel() {
       <ErrorBox error={[error, decide.error].map((e) => e && errorMessage(e)).find(Boolean) ?? null} />
       <Card flush>
         {isLoading ? <Skeleton className="m-5 h-24" /> : !data?.length ? <EmptyState icon={<ShieldCheck size={20} />} title="Nothing waiting for a check." /> : (
-          <Table head={['Lead', 'Branch answer', 'Loan requirement', 'By', '']}>
+          <Table head={['Entry ID and customer', 'Branch’s answer', 'Loan requirement (₹)', 'Answered by', '']} exportName="Green channel">
             {data.map((r) => (
               <tr key={r.answer_id}>
                 <Td><Link className="font-mono text-xs font-semibold text-brand-700 hover:underline" to={path(`entries/${r.entry_id}`)}>{r.entry_code}</Link><div className="text-xs text-slate-500">{r.person_name}</div></Td>

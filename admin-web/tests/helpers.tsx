@@ -53,8 +53,8 @@ export function meFor(role: string, over: Record<string, unknown> = {}) {
 export const META = {
   categories: [{ key: 'lead', label: 'Lead', call_group: 'lead' }, { key: 'contact_point', label: 'Contact Point', call_group: 'dsa_cp' }],
   slots: ['09-10', '10-11', '11-12', '12-01', '01-02', '02-03', '03-04', '04-05', '05-06', '06-07'],
-  outcomes: ['Connected', 'RNR', 'Busy', 'Switched off', 'Not reachable', 'Invalid number', 'Wrong person', 'Callback requested', 'Refused to talk'],
-  unanswered: ['Busy', 'Not reachable', 'RNR', 'Switched off'],
+  outcomes: ['Connected', 'Rang, no answer', 'Busy', 'Switched off', 'Not reachable', 'Invalid number', 'Wrong person', 'Callback requested', 'Refused to talk'],
+  unanswered: ['Busy', 'Not reachable', 'Rang, no answer', 'Switched off'],
   questions: {
     name_check: ['Same person', 'Same person, different spelling', 'Different person – same family', 'Different person'],
     visit: ['Yes', "Don't recall", 'No'], relationship: ['No', 'Yes – the same officer', 'Yes – another employee'],
@@ -63,7 +63,7 @@ export const META = {
     purpose: ['Discuss eligibility'], own_contribution: ['Fully'], dsa_rag: ['Green', 'NA', 'Amber', 'Red'],
   },
   branch_codes: [
-    { code: '1', meaning: 'Logged in', date_label: null }, { code: '3', meaning: 'RNR: customer not answering the branch', date_label: null },
+    { code: '1', meaning: 'Logged in', date_label: null }, { code: '3', meaning: 'Customer not answering the branch', date_label: null },
     { code: 'R2', meaning: 'Rejected: eligibility or income', date_label: null }, { code: 'A1', meaning: 'Documents pending: KYC', date_label: 'Login date' },
   ],
   statuses: ['In retry', 'Validated'], lead_outcomes: ['Logged in'], rags: ['PENDING', 'NA', 'RED', 'AMBER', 'RNR', 'GREEN'],

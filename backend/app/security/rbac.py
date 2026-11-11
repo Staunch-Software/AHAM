@@ -60,6 +60,15 @@ PERMISSIONS: dict[str, frozenset[str]] = {
                                 "login_register.upload"}),
 }
 
+# Weighted average IRR (docs/irr-module.md): the management ladder, MIS and admin read the report (scoped as above);
+# MIS and admin also upload the Disbursement Register, correct exceptions and change the IRR settings.
+_IRR = {"irr.view": ("branch_manager", "cluster_manager", "region_manager", "product_manager", "business_manager",
+                     "mis", "admin"),
+        "irr.manage": ("mis", "admin")}
+for _perm, _roles in _IRR.items():
+    for _role in _roles:
+        PERMISSIONS[_role] = PERMISSIONS[_role] | {_perm}
+
 ALL_PERMISSIONS: frozenset[str] = frozenset().union(*PERMISSIONS.values())
 
 

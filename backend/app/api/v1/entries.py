@@ -14,13 +14,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_perm
 from app.core.db import SessionLocal, get_session
-from app.models import Branch, Company, CpSubtype, EntryEvent, Holiday, OutboxEvent, Photo, Region, SankalpEntry, User
+from app.models import (
+    Branch,
+    Company,
+    CpSubtype,
+    EntryEvent,
+    Holiday,
+    LeadCard,
+    OutboxEvent,
+    Photo,
+    Region,
+    SankalpEntry,
+    User,
+)
 from app.services import calendar
 from app.services.geocoding import place_status_for_api
 from app.services.periods import tz_of
 from app.services.phone import clean_phone, is_valid_phone
 from app.services.reference import holiday_set
-from app.services.sankalp import rules
+from app.services.sankalp import engine, rules
 from app.services.sankalp.ops import company_today
 from app.services.sankalp.views import calling_detail
 from app.services.scope import entry_scope
@@ -94,6 +106,80 @@ def _replay(e: SankalpEntry, user: User, req_hash: str) -> dict:
     return _receipt(e, True)
 
 
+async def converted_lead(s: AsyncSession, company_id: uuid.UUID, phone: str) -> dict | None:
+    """The earlier entry that already made this mobile number a lead (a TCS lead ID on its lead card, or a login),
+    with a message saying so; None when there is none. A converted lead is not entered again, by any SO."""
+    row = (await s.execute(
+        select(SankalpEntry, User.full_name, LeadCard.lead_id).join(User, User.id == SankalpEntry.so_user_id)
+        .outerjoin(LeadCard, LeadCard.entry_id == SankalpEntry.id)
+        .where(SankalpEntry.company_id == company_id, SankalpEntry.phone == phone,
+               or_(LeadCard.lead_id.is_not(None), SankalpEntry.tcs_id.is_not(None)))
+        .order_by(SankalpEntry.submitted_at_device).limit(1))).first()
+    if not row:
+        return None
+    e, so_name, lead_id = row
+    what = f"TCS lead ID {lead_id}" if lead_id else f"logged in, TCS ID {e.tcs_id}"
+    return {"code": "already_a_lead", "entry_code": e.entry_code, "so_name": so_name, "entry_date": str(e.entry_date),
+            "lead_id": lead_id, "tcs_id": e.tcs_id,
+            "message": f"This customer is already a lead ({what}) from {so_name}'s entry {e.entry_code} of "
+                       f"{e.entry_date:%d %b %Y}. A new entry for this mobile number is not accepted."}
+
+
+@router.get("/entries/check-phone")
+async def check_phone(phone: str = Query(max_length=50), user: User = Depends(require_perm("entries.create")),
+                      s: AsyncSession = Depends(get_session)):
+    """For the entry form while the SO types the number: is it valid, and is the customer already a lead?"""
+    cleaned = clean_phone(phone)
+    valid = is_valid_phone(cleaned)
+    return {"phone": cleaned, "valid": valid, "lead": await converted_lead(s, user.company_id, cleaned) if valid else None}
+
+
+async def add_entry(s: AsyncSession, so: User, *, category: str, subtype: CpSubtype | None, name: str, phone: str,
+                    phone_raw: str, description: str, keka_photo_time: time | None, submitted_at: datetime,
+                    tz_offset: int | None, received: datetime, idempotency_key: str, client_entry_id: str,
+                    req_hash: str, location: EntryLocation, clock_at_last_contact: datetime | None = None,
+                    photo_count: int = 0, source: str = "app", import_batch_id: uuid.UUID | None = None) -> SankalpEntry:
+    """A new entry for the SO from checked values (the phone app and the bulk upload). The Entry ID and the dates
+    come from the Submit time; the SO's branch and spoke from the roster."""
+    company = await s.get(Company, so.company_id)
+    tz = tz_of(company.timezone)
+    cfg = await load_settings(s, so.company_id)
+    d = calendar.entry_date(submitted_at, tz)
+    holidays = await holiday_set(s, so.company_id, d)
+    base_code = calendar.entry_code(so.employee_code.upper(), submitted_at, tz)
+    # Two entries by one SO in the same second: the second gets "-2" (one lock per Entry ID keeps this race-free).
+    await s.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"), {"k": f"{so.company_id}:{base_code}"})
+    taken = set((await s.execute(select(SankalpEntry.entry_code).where(
+        SankalpEntry.company_id == so.company_id,
+        or_(SankalpEntry.entry_code == base_code, SankalpEntry.entry_code.like(f"{base_code}-%"))))).scalars().all())
+    code, n = base_code, 1
+    while code in taken:
+        n += 1
+        code = f"{base_code}-{n}"
+    loc = location
+    has_fix = loc.latitude is not None
+    e = SankalpEntry(
+        company_id=so.company_id, entry_code=code, emp_code=so.employee_code.upper(),
+        so_user_id=so.id, original_so_user_id=so.id, branch_id=so.branch_id, spoke=so.spoke,
+        category=category, cp_subtype_id=subtype.id if subtype else None,
+        cp_subtype_label=subtype.label if subtype else None,
+        person_name=name, phone=phone, phone_raw=phone_raw.strip()[:50], description=description,
+        keka_photo_time=keka_photo_time,
+        submitted_at_device=submitted_at, device_tz_offset_min=tz_offset,
+        entry_date=d, count_date=calendar.count_date(d, holidays),
+        device_time_suspect=submitted_at > received + timedelta(minutes=cfg.clock_skew_minutes) or bool(
+            clock_at_last_contact and submitted_at < clock_at_last_contact - timedelta(minutes=1)),
+        latitude=loc.latitude, longitude=loc.longitude, accuracy_m=loc.accuracy_m,
+        location_fix_at_device=loc.fix_at_device,
+        location_status="obtained" if has_fix else (loc.status if loc.status != "obtained" else "unavailable"),
+        received_at_server=received, idempotency_key=idempotency_key, client_entry_id=client_entry_id,
+        request_hash=req_hash, photo_count=photo_count, call_group=rules.CALL_GROUP[category],
+        rag="PENDING" if rules.CALL_GROUP[category] != "none" else "NA", source=source, import_batch_id=import_batch_id,
+    )
+    s.add(e)
+    return e
+
+
 @router.post("/entries", status_code=201)
 async def create_entry(body: EntryIn, user: User = Depends(require_perm("entries.create")),
                        s: AsyncSession = Depends(get_session)):
@@ -145,52 +231,22 @@ async def create_entry(body: EntryIn, user: User = Depends(require_perm("entries
                 errors.append({"field": "photo_ids", "message": f"Photo {pid} already belongs to another entry"})
     if errors:
         raise HTTPException(422, {"code": "validation_failed", "errors": errors})
+    if lead := await converted_lead(s, user.company_id, phone):
+        raise HTTPException(409, lead)
 
-    company = await s.get(Company, user.company_id)
-    tz = tz_of(company.timezone)
-    cfg = await load_settings(s, user.company_id)
-    d = calendar.entry_date(body.submitted_at_device, tz)
-    holidays = await holiday_set(s, user.company_id, d)
-    base_code = calendar.entry_code(user.employee_code.upper(), body.submitted_at_device, tz)
-    # Two entries by one SO in the same second: the second gets "-2" (one lock per Entry ID keeps this race-free).
-    await s.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"), {"k": f"{user.company_id}:{base_code}"})
-    taken = set((await s.execute(select(SankalpEntry.entry_code).where(
-        SankalpEntry.company_id == user.company_id,
-        or_(SankalpEntry.entry_code == base_code, SankalpEntry.entry_code.like(f"{base_code}-%"))))).scalars().all())
-    code, n = base_code, 1
-    while code in taken:
-        n += 1
-        code = f"{base_code}-{n}"
-
-    has_fix = loc.latitude is not None
-    e = SankalpEntry(
-        company_id=user.company_id, entry_code=code, emp_code=user.employee_code.upper(),
-        so_user_id=user.id, original_so_user_id=user.id, branch_id=user.branch_id, spoke=user.spoke,
-        category=body.category, cp_subtype_id=subtype.id if subtype else None,
-        cp_subtype_label=subtype.label if subtype else None,
-        person_name=name, phone=phone, phone_raw=body.phone.strip()[:50], description=description,
-        keka_photo_time=body.keka_photo_time,
-        submitted_at_device=body.submitted_at_device, device_tz_offset_min=body.device_tz_offset_min,
-        entry_date=d, count_date=calendar.count_date(d, holidays),
-        device_time_suspect=body.submitted_at_device > received + timedelta(minutes=cfg.clock_skew_minutes) or bool(
-            body.device_clock_at_last_contact
-            and body.submitted_at_device < body.device_clock_at_last_contact - timedelta(minutes=1)),
-        latitude=loc.latitude, longitude=loc.longitude, accuracy_m=loc.accuracy_m,
-        location_fix_at_device=loc.fix_at_device,
-        location_status="obtained" if has_fix else (loc.status if loc.status != "obtained" else "unavailable"),
-        received_at_server=received, idempotency_key=body.idempotency_key, client_entry_id=body.client_entry_id,
-        request_hash=req_hash, photo_count=len(photos), call_group=rules.CALL_GROUP[body.category],
-        rag="PENDING" if rules.CALL_GROUP[body.category] != "none" else "NA",
-    )
-    s.add(e)
+    e = await add_entry(s, user, category=body.category, subtype=subtype, name=name, phone=phone, phone_raw=body.phone,
+                        description=description, keka_photo_time=body.keka_photo_time,
+                        submitted_at=body.submitted_at_device, tz_offset=body.device_tz_offset_min, received=received,
+                        idempotency_key=body.idempotency_key, client_entry_id=body.client_entry_id, req_hash=req_hash,
+                        location=loc, clock_at_last_contact=body.device_clock_at_last_contact, photo_count=len(photos))
     try:
         await s.flush()
         for p in photos:
             p.entry_id = e.id
         s.add(EntryEvent(entry_id=e.id, company_id=user.company_id, kind="created", actor_id=user.id,
-                         detail={"entry_code": code, "synced_after_s": round((received - body.submitted_at_device).total_seconds())}))
+                         detail={"entry_code": e.entry_code, "synced_after_s": round((received - body.submitted_at_device).total_seconds())}))
         s.add(OutboxEvent(company_id=user.company_id, event_type="entry.created",
-                          payload={"entry_id": str(e.id), "entry_code": code, "branch_id": str(user.branch_id)}))
+                          payload={"entry_id": str(e.id), "entry_code": e.entry_code, "branch_id": str(user.branch_id)}))
         await s.commit()
     except IntegrityError:
         await s.rollback()
@@ -221,14 +277,18 @@ def entry_row(e: SankalpEntry, so: User | None, branch: Branch | None, region: R
         "submitted_at_device": e.submitted_at_device, "received_at_server": e.received_at_server,
         "entry_date": e.entry_date, "count_date": e.count_date, "device_time_suspect": e.device_time_suspect,
         "selection_status": e.selection_status, "status": e.status, "rag": effective_rag(e),
+        "current_status": engine.display_status(status=e.status, selection_status=e.selection_status,
+                                                call_group=e.call_group, lead_outcome=e.lead_outcome,
+                                                unanswered=e.unanswered_count, callback_date=e.callback_date,
+                                                priority_reason=e.priority_reason if e.priority else None),
         "rag_overridden": e.rag_override is not None, "priority": e.priority, "priority_reason": e.priority_reason,
         "handling_branch_id": str(e.work_branch_id) if e.work_branch_id else None,
         "expired_action": e.expired_action, "expired_on": e.expired_on,
         "so_action": e.so_action, "so_action_date": e.so_action_date, "so_action_until": e.so_action_until,
-        "cc_action": e.cc_action, "cc_action_date": e.cc_action_date,
+        "cc_action": e.cc_action, "cc_action_date": e.cc_action_date, "callback_date": e.callback_date,
         "lead_outcome": e.lead_outcome, "tcs_id": e.tcs_id, "customer_validated": e.customer_validated,
         "sankalp_success": e.sankalp_success, "photo_count": e.photo_count,
-        "has_location": e.latitude is not None, "place_name": e.place_name,
+        "has_location": e.latitude is not None, "place_name": e.place_name, "source": e.source,
     }
 
 
@@ -395,7 +455,7 @@ async def my_summary(user: User = Depends(require_perm("entries.create")), s: As
     fix = (await s.execute(select(SankalpEntry).where(
         mine, SankalpEntry.so_action == rules.ACT_CORRECT_NUMBER,
         or_(SankalpEntry.so_action_until.is_(None), SankalpEntry.so_action_until >= today))
-        .order_by(SankalpEntry.entry_date.desc()).limit(50))).scalars().all()
+        .order_by(SankalpEntry.entry_date.desc()))).scalars().all()  # the window keeps it short; no silent cap (15)
     return {
         "today": today, "entries_today": sum(by_cat.values()),
         "lead_prospect_today": sum(v for k, v in by_cat.items() if k in rules.LEAD_CATEGORIES),

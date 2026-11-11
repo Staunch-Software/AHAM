@@ -278,7 +278,7 @@ def tcs_lead_id() -> str:
     return f"TCS-L-{rng.randint(100000, 999999)}"
 
 
-UNANSWERED = ["RNR", "RNR", "RNR", "Busy", "Switched off", "Not reachable"]
+UNANSWERED = [R.RNR, R.RNR, R.RNR, "Busy", "Switched off", "Not reachable"]
 
 
 # ---------------------------------------------------------------- how each contact behaves on the phone
@@ -595,12 +595,12 @@ async def main():
              desc="Hardware shop owner, wants to refer customers")
         p_pv = new_phone()
         never = {day: [{"outcome": rng.choice(UNANSWERED)}, {"outcome": rng.choice(UNANSWERED)}] for day in (TUE, WED, THU, FRI)}
-        never[SAT] = [{"outcome": "RNR"}]
+        never[SAT] = [{"outcome": R.RNR}]
         hero(demo, MON, "ravi", 14, 50, never, name="Prasad Varma", category="lead", phone=p_pv,
              desc="Gave his number at the bus stand, wants a loan for a flat")
         hero(demo, WED, "srinivas", 17, 5, None, key="Prasad Varma #2", name="Prasad Varma", category="lead", phone=p_pv,
              desc="Met at Kanuru, interested in a home loan")
-        hero(demo, MON, "kiran", 15, 30, {TUE: [{"outcome": "RNR"}]}, name="Balaji Constructions", category="dsa_connector",
+        hero(demo, MON, "kiran", 15, 30, {TUE: [{"outcome": R.RNR}]}, name="Balaji Constructions", category="dsa_connector",
              desc="Small builder, could refer buyers")
         hero(demo, MON, "padma", 16, 0, {TUE: [{"outcome": "Callback requested", "next_date": str(THU)}],
                                           THU: [{"outcome": C, "answers": ans(THU, "Rajesh Kumar", loan_need="Plot + construction", next_step="SO / branch visit")}]},
@@ -753,7 +753,8 @@ async def afternoon(demo: Demo, d: date):
                              "notes": "Logged in at Nellore; mobile in the register is the wife's"})
         await stamp(at(d, 16, 5))
         await api.call("PUT", MASTER, f"/calls/entries/{H['Gopi Krishna']['id']}/tracker",
-                       json={"owner": "done", "outcome": "Rejected", "reject_reason": "Chose another lender (SBI)"})
+                       json={"owner": "done", "outcome": "Rejected", "reject_reason": "Loan taken elsewhere",
+                             "notes": "Chose another lender (SBI)"})
         await stamp(at(d, 16, 15))
         await api.call("PUT", MASTER, f"/calls/entries/{H['Anjali Devi']['id']}/tracker",
                        json={"rag_override": "AMBER", "notes": "Son may need a loan after the harvest; check in January"})

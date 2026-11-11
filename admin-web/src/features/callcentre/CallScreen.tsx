@@ -2,10 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Check, IdCard, Phone, PhoneCall } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Button, Card, cx, ErrorBox, Field, Input, KV, Loading, RagBadge, Select, StatusText, Textarea } from '../../components/ui'
+import { Button, Card, cx, ErrorBox, Field, Input, KV, Loading, RagBadge, Select, Textarea } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
-import { type Answers, currentSlot, hasLoanType, previewStatus } from '../../services/classify'
+import { type Answers, currentSlot, hasLoanType, previewStatus, questionApplies } from '../../services/classify'
 import { fmtRupees, fmtServer, isSunday, parseWhole, rupeesInWords } from '../../services/format'
 import { useBranches, useMeta } from '../../services/meta'
 import type { EntryDetail } from '../../types'
@@ -125,7 +125,7 @@ export default function CallScreen() {
   const m = useMutation({
     mutationFn: async () => (await api.post(`/calls/entries/${id}/attempts`, {
       slot, outcome, next_date: outcome === 'Callback requested' ? nextDate : (null as string | null),
-      answers: outcome === 'Connected' ? Object.fromEntries(Object.entries(a).filter(([, v]) => v)) : undefined,
+      answers: outcome === 'Connected' ? Object.fromEntries(Object.entries(a).filter(([k, v]) => v && questionApplies(k, a.loan_need))) : undefined,
     })).data,
     onSuccess: (d) => {
       setResult({ row_status: d.row_status, rag: d.rag }); setOutcome(''); setA({}); setNextDate('')
@@ -191,7 +191,7 @@ export default function CallScreen() {
                   <>
                     {group === 'dsa_cp' && <p className="rounded-lg bg-gold-50 px-3 py-2 text-xs text-slate-700">Needs a home loan himself: ask the Lead questions; a validated result becomes “Validated – converted from DSA/CP”.</p>}
                     <div className="grid gap-4 sm:grid-cols-2">
-                      {Q_LABELS.map(([k, label]) => <Choice key={k} label={label} options={q[k]!} value={a[k]} onChange={(v) => setA({ ...a, [k]: v })} />)}
+                      {Q_LABELS.filter(([k]) => questionApplies(k, a.loan_need)).map(([k, label]) => <Choice key={k} label={label} options={q[k]!} value={a[k]} onChange={(v) => setA({ ...a, [k]: v })} />)}
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <Field label="Name as given"><Input value={a.name_given ?? ''} onChange={(ev) => setA({ ...a, name_given: ev.target.value })} /></Field>
@@ -208,7 +208,7 @@ export default function CallScreen() {
             </div>
           </Card>
           {(hasLoanType(lastAnswers) || e.lead_card) && <LeadCard key={e.lead_card?.lead_id ?? 'new'} entry={e} />}
-          {e.so_action && <p className="text-sm text-slate-600">Next for the branch: <StatusText status={`${e.so_action}${e.so_action_date ? ` · ${e.so_action_date}` : ''}`} /></p>}
+          {e.so_action && <p className="text-sm text-slate-600">Next for the branch: <span className="font-medium text-slate-800">{e.so_action}{e.so_action_date ? ` · ${e.so_action_date}` : ''}</span></p>}
         </div>
       </div>
     </>

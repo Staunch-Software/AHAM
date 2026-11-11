@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query'
 import { ClipboardList } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Card, EmptyState, ErrorBox, PageTitle, Pager, RagBadge, Segmented, Skeleton, Table, Td } from '../../components/ui'
+import { Card, EmptyState, ErrorBox, Pager, PageTitle, RAG_LABEL, RagBadge, Segmented, Skeleton, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
+import { allPages } from '../../services/exporting'
 import { useAuth } from '../../services/auth'
 import type { Page } from '../../types'
 
@@ -23,7 +24,9 @@ export default function TrackerList() {
       <ErrorBox error={error ? errorMessage(error) : null} />
       <Card flush>
         {isLoading ? <Skeleton className="m-5 h-24" /> : !data?.length ? <EmptyState icon={<ClipboardList size={20} />} title="No tracker rows yet." /> : (
-          <Table head={['Entry', 'Owner', 'Action', 'Follow-up', 'Outcome', 'TCS ID', 'RAG', 'Notes']}>
+          <Table head={['Entry ID and customer', 'Who has it now', 'Action type', 'Follow-up date', 'Outcome', 'TCS ID (login)', 'RAG', 'Notes']} exportName="Follow-up tracker"
+            exportAll={async () => (await allPages<Row>('/calls/tracker', { owner: owner || undefined })).map((r) => [`${r.entry_code} · ${r.person_name}`,
+              r.owner?.replace('_', ' '), r.action_type, r.followup_date, r.outcome, r.tcs_id, RAG_LABEL[r.rag] ?? r.rag, r.notes])}>
             {data.map((r) => (
               <tr key={r.entry_id}>
                 <Td><Link className="font-mono text-xs font-semibold text-brand-700 hover:underline" to={path(`entries/${r.entry_id}`)}>{r.entry_code}</Link><div className="text-xs text-slate-500">{r.person_name}</div></Td>

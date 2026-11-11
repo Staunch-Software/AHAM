@@ -10,7 +10,7 @@ from sqlalchemy import text
 import asyncio
 from contextlib import asynccontextmanager
 
-from app.api.v1 import auth, branch, calling, entries, events, imports, org, reference, reports, uploads
+from app.api.v1 import auth, branch, calling, entries, events, exports, imports, irr, org, reference, reports, uploads
 from app.core.config import get_settings
 from app.core.db import engine
 from app.core.logging import configure_logging
@@ -44,7 +44,10 @@ app.add_middleware(
 
 
 MAX_JSON_BODY = 1024 * 1024
-IMPORT_BODY = 11 * 1024 * 1024  # roster / attendance / login register files (10 MB + form overhead)
+IMPORT_BODY = 11 * 1024 * 1024  # roster, attendance, login register, bulk entries and IRR register files (10 MB + form overhead)
+IMPORT_PATHS = ("/api/v1/imports/", "/api/v1/irr/disbursements")
+# an Excel export posts the rows on screen: allow a large table
+EXPORT_BODY = 20 * 1024 * 1024
 
 
 @app.middleware("http")
@@ -54,7 +57,8 @@ async def limit_body_size(request: Request, call_next):
     declared = request.headers.get("content-length")
     path = request.url.path
     is_upload = request.method == "PUT" and path.startswith("/api/v1/uploads/")
-    limit = settings.max_upload_bytes if is_upload else (IMPORT_BODY if path.startswith("/api/v1/imports/") else MAX_JSON_BODY)
+    limit = settings.max_upload_bytes if is_upload else (
+        IMPORT_BODY if path.startswith(IMPORT_PATHS) else EXPORT_BODY if path == "/api/v1/exports/xlsx" else MAX_JSON_BODY)
     if declared and declared.isdigit() and int(declared) > limit:
         return JSONResponse({"detail": "Request body too large"}, status_code=413)
     return await call_next(request)
@@ -100,5 +104,5 @@ async def ready():
 
 
 for r in (auth.router, org.router, reference.router, imports.router, uploads.router, entries.router, calling.router,
-          branch.router, reports.router, events.router):
+          branch.router, reports.router, events.router, irr.router, exports.router):
     app.include_router(r, prefix="/api/v1")

@@ -113,12 +113,12 @@ class TrackerIn(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     owner: Literal[tuple(R.TRACKER_OWNERS)] | None = None  # type: ignore[valid-type]
-    action_type: str | None = Field(None, max_length=60)
+    action_type: Literal[tuple(R.TRACKER_ACTION_TYPES)] | None = None  # type: ignore[valid-type]
     caller_id: uuid.UUID | None = None
     followup_date: date | None = None
     outcome: Literal[tuple(R.TRACKER_OUTCOMES)] | None = None  # type: ignore[valid-type]
     tcs_id: str | None = Field(None, max_length=50)
-    reject_reason: str | None = Field(None, max_length=200)
+    reject_reason: Literal[tuple(R.TRACKER_REJECT_REASONS)] | None = None  # type: ignore[valid-type]
     rag_override: Literal[tuple(R.RAGS[1:])] | None = None  # type: ignore[valid-type]
     immediate_callback: bool = False
     notes: str | None = Field(None, max_length=2000)

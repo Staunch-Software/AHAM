@@ -129,7 +129,7 @@ export default function DailyRun() {
 
       <Card title="Callers" subtitle="A caller who is off today: move their open list (retries and PRIORITY calls too) to another caller" className="mt-6" flush>
         {move.data && <p className="px-5 pt-3 text-sm text-emerald-700" role="status">{move.data.moved} moved.</p>}
-        <Table head={['Caller', 'Open on list', 'First try overdue', 'Tries today', 'Move today’s list to', '']}>
+        <Table head={['Caller', 'Still to call today', 'Not called within the target (overdue)', 'Calls made today', 'Move today’s list to', '']} exportName="Callers today">
           {overview.data?.callers.map((c) => (
             <tr key={c.id}><Td className="font-medium">{c.name}{!c.active && <span className="ml-2 text-xs text-slate-400">inactive</span>}</Td><Td className="tabular">{c.open}</Td>
               <Td className="tabular">{c.first_try_overdue || 0}</Td><Td className="tabular">{c.attempts_today}</Td>
@@ -145,7 +145,7 @@ export default function DailyRun() {
 
       <Card title="Work with no caller" subtitle="The branch had no caller of the day" className="mt-6" flush>
         {!overview.data?.items.length ? <EmptyState icon={<UserPlus size={20} />} title="Everything is on a caller's list." /> : (
-          <Table head={['Entry', 'Person', 'Branch', 'Kind', 'Assign to']}>
+          <Table head={['Entry ID', 'Person met', 'Branch', 'List', 'Assign to caller']} exportName="Work with no caller">
             {overview.data.items.map((r) => (
               <tr key={r.allocation_id}>
                 <Td><Link className="font-mono text-xs font-semibold text-brand-700 hover:underline" to={path(`entries/${r.id}`)}>{r.entry_code}</Link></Td>
@@ -161,7 +161,7 @@ export default function DailyRun() {
       <Card title="Recent runs" className="mt-6" flush>
         {runs.data?.some((r) => did(r.counts)) ? (
           <>
-            <Table head={['Run date', 'Started', 'By', 'Selected', 'Put on lists', 'Offered again']}>
+            <Table head={['Run date', 'Started at', 'Started by', 'Entries decided', 'Put on callers’ lists', 'Not done before, offered again']} exportName="Daily runs">
               {runs.data.filter((r) => did(r.counts)).map((r) => (
                 <tr key={r.id}><Td>{r.run_date}</Td><Td>{new Date(r.started_at).toLocaleString()}</Td><Td>{r.started_by}</Td>
                   <Td className="text-xs">{Object.entries(r.counts.selection ?? {}).map(([k, v]) => `${v} ${decision(k)}`).join(' · ') || '—'}</Td>

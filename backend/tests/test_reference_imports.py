@@ -57,8 +57,12 @@ async def test_roster_upload_dry_run_then_save(client, tenant_a):
     assert dry.status_code == 200, dry.text
     d = dry.json()
     assert d["summary"] == {"created": 4, "updated": 1, "unchanged": 0, "errors": 4}
-    msgs = " | ".join(e["message"] for e in d["errors"])
-    assert "not Region Two" in msgs and "Wizard" in msgs and "Nowhere" in msgs and "more than once" in msgs
+    # each problem names the row, the column as the file calls it, and the value found
+    errs = {(e["row"], e["column"], e["value"]): e["message"] for e in d["errors"]}
+    assert "not Region Two" in errs[(6, "Region", "Region Two")]
+    assert "designation" in errs[(7, "Designation", "Wizard")]
+    assert "no branch with this name" in errs[(8, "Branch", "Nowhere")]
+    assert "already on row 2" in errs[(9, "Emp ID", f"R1{tag}")]
     # nothing saved by the dry run
     assert all(e["employee_code"] != f"R1{tag}" for e in (await client.get(
         f"/api/v1/employees?q=R1{tag}", headers=mon)).json()["items"])

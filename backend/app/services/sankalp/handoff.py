@@ -21,11 +21,18 @@ from app.models import (
 from app.services.phone import clean_phone, is_valid_phone, split_contacts
 from app.services.sankalp import engine as E
 from app.services.sankalp import rules as R
-from app.services.sankalp.ops import company_today, event, recompute, recompute_many, recompute_phone_group
+from app.services.sankalp.ops import (
+    company_today,
+    event,
+    put_on_list_now,
+    recompute,
+    recompute_many,
+    recompute_phone_group,
+)
 from app.services.sankalp.schemas import BranchAnswerIn, TrackerIn
 from app.services.scope import visible_branch_ids
 from app.services.settings import load_settings
-from app.services.tabular import parse_date, pick, text
+from app.services.tabular import column_name, parse_date, pick, row_error, text
 
 
 # ================================================================ 12.4 branch answers
@@ -49,7 +56,7 @@ async def can_answer_for(s: AsyncSession, user: User, e: SankalpEntry) -> bool:
 async def answer_lead(s: AsyncSession, e: SankalpEntry, user: User, body: BranchAnswerIn) -> BranchAnswer:
     if not await can_answer_for(s, user, e):
         raise HTTPException(403, {"code": "not_your_branch", "message": "Only the branch's BM (or the RBH where there is no BM) answers this lead"})
-    if e.so_action not in R.LEAD_ACTIONS and e.cc_action != R.CC_FOLLOW_UP:
+    if e.so_action not in R.BRANCH_LEAD_ACTIONS and e.cc_action != R.CC_FOLLOW_UP:
         raise HTTPException(409, {"code": "not_a_branch_lead", "message": "This entry has no open lead action for the branch"})
     cfg = await load_settings(s, e.company_id)
     today = await company_today(s, e.company_id)
@@ -71,6 +78,8 @@ async def answer_lead(s: AsyncSession, e: SankalpEntry, user: User, body: Branch
     event(s, e, "branch_answer", user.id, code=body.code, date=body.answer_date, green_channel=a.green_channel)
     await s.flush()
     await recompute(s, e, cfg=cfg, today=today)
+    if e.priority:
+        await put_on_list_now(s, e, today)
     return a
 
 
@@ -124,6 +133,7 @@ async def correct_number(s: AsyncSession, e: SankalpEntry, user: User, new_phone
     await s.flush()
     await recompute(s, e, cfg=cfg, today=today)
     await recompute_phone_group(s, e.company_id, old)
+    await put_on_list_now(s, e, today, kind="retry")  # 13.2: called again at once, by the caller who first handled it
     return e
 
 
@@ -204,15 +214,20 @@ async def save_tracker(s: AsyncSession, e: SankalpEntry, user: User, body: Track
           tcs_id=body.tcs_id, rag_override=body.rag_override)
     await s.flush()
     await recompute(s, e)
+    if e.priority:
+        await put_on_list_now(s, e, await company_today(s, e.company_id))
     return tr
 
 
 # ================================================================ 11 login register
 REGISTER_COLUMNS = {
     "tcs_id": ["tcs id", "tcs lead id", "application id", "app id", "lan", "tcs"],
-    "contact": ["customer contact", "contact", "mobile", "mobile number", "phone", "contact number", "customer mobile"],
+    # the MIS file's own heading is "Applicant Contact No (Customer)"
+    "contact": ["customer contact", "applicant contact no customer", "applicant contact no", "applicant contact number",
+                "applicant contact", "applicant mobile", "contact", "mobile", "mobile number", "phone", "contact number",
+                "customer mobile"],
     "login_date": ["login date", "logged in date", "date of login", "login dt"],
-    "product": ["product", "product name"],
+    "product": ["product", "product type", "product name"],
     "final_status": ["final status", "status"],
     "source": ["source", "lead source", "sourcing"],
     "emp_code": ["emp code", "emp id", "employee code", "so code", "sourcing emp code"],
@@ -223,21 +238,24 @@ async def import_register(s: AsyncSession, user: User, filename: str, rows: list
     """Saves the register rows (every upload is kept: for a TCS ID seen more than once, the latest row wins by
     default), then recomputes every entry whose phone appears in a changed row."""
     errors, parsed = [], []
+    col = {k: column_name(rows, a) for k, a in REGISTER_COLUMNS.items()}
     for row in rows:
         n = row["_row"]
         tcs = text(pick(row, REGISTER_COLUMNS["tcs_id"]), 50)
         if not tcs:
-            errors.append({"row": n, "message": "TCS ID is empty"})
+            errors.append(row_error(n, col["tcs_id"], "", "TCS ID is empty. Every login needs its TCS ID"))
             continue
         try:
             login_date = parse_date(pick(row, REGISTER_COLUMNS["login_date"]))
         except ValueError as e:
-            errors.append({"row": n, "tcs_id": tcs, "message": str(e)})
+            errors.append(row_error(n, col["login_date"], pick(row, REGISTER_COLUMNS["login_date"]), str(e), tcs_id=tcs))
             continue
         raw_contact = pick(row, REGISTER_COLUMNS["contact"])
         phones = split_contacts(raw_contact)
         if not phones:
-            errors.append({"row": n, "tcs_id": tcs, "message": "No valid mobile number in the contact cell (row kept for manual matching)"})
+            errors.append(row_error(n, col["contact"], raw_contact, "No valid 10-digit mobile number (starting 6-9) in this "
+                                    "cell, so no entry can be matched. The row is kept; the Master owner can enter the "
+                                    "TCS ID on the entry by hand", tcs_id=tcs))
         parsed.append(LoginRegisterRow(
             company_id=user.company_id, row_no=n, tcs_id=tcs.upper(), contacts_raw=text(raw_contact, 300), phones=phones,
             login_date=login_date, product=text(pick(row, REGISTER_COLUMNS["product"]), 100),

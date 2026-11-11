@@ -48,6 +48,7 @@ function SankalpSettings() {
       <p className="mb-1 text-xs text-slate-500">Open points of the business logic. The defaults are today’s behaviour.</p>
       {row('Allow same-day calling', <Toggle label={v.same_day_calling ? 'On' : 'Off: called from the next day'} checked={v.same_day_calling} onChange={(c) => set('same_day_calling', c)} />)}
       {row('A TCS ID repeated in the login register', <Select value={v.duplicate_tcs_rule} onChange={(e) => set('duplicate_tcs_rule', e.target.value)}><option value="latest">The latest row wins</option><option value="first">The first row wins</option></Select>)}
+      {row('A Sales Officer with no attendance row that day', <Select value={v.unmarked_attendance ?? 'present'} onChange={(e) => set('unmarked_attendance', e.target.value)}><option value="present">Counted as present (shown as not marked)</option><option value="absent">Counted as absent (AB)</option></Select>)}
 
       <h3 className="mt-6 text-xs font-semibold uppercase tracking-wider text-brand-600">Designation to role (roster upload)</h3>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">

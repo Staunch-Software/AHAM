@@ -125,7 +125,7 @@ async def compliance_rows(s: AsyncSession, user: User, day: date, branch_id: uui
         if u.joining_date and day < u.joining_date:
             state = "N/A"  # joiners: not counted before their joining date
         elif code is None:
-            state = "no attendance"
+            state = "absent" if cfg.unmarked_attendance == "absent" else "no attendance"
         else:
             state = "present" if code.upper().replace(" ", "") in present_codes else "absent"
         shortfall = None if state in ("N/A",) else ("AB" if state == "absent" else max(cfg.daily_entry_target - n, 0))
@@ -199,7 +199,7 @@ async def takeoff_csv(date_from: date, date_to: date, user: User = Depends(requi
                  "First validation for this number", "Validated on", "Lead outcome", "TCS ID", "Login date",
                  "Counts as Sankalp success"],
                 [[e.entry_code, code, name, b, r, e.entry_date, e.count_date, R.CATEGORIES.get(e.category), e.phone,
-                  e.selection_status or "", e.status or "", e.rag_override or e.rag, yn(e.selection_status == R.NC_REPEAT),
+                  e.selection_status or "", e.status or "", R.RAG_LABELS.get(e.rag_override or e.rag), yn(e.selection_status == R.NC_REPEAT),
                   yn(e.customer_validated), yn(e.first_validation), e.validated_on or "", e.lead_outcome or "",
                   e.tcs_id or "", e.login_date or "", yn(e.sankalp_success)] for e, code, name, b, r in rows])
 

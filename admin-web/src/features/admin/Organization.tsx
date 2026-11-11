@@ -102,7 +102,7 @@ export default function Organization() {
           </Card>
         </div>
         <Card title={`Branches (${branches?.length ?? 0})`} flush actions={<Building2 size={18} className="text-slate-400" />}>
-          <Table head={['Branch', 'Code', 'Region', 'Cluster', 'BM', 'Status', '']}>
+          <Table head={['Branch', 'Branch code', 'Region', 'Cluster', 'Branch Manager', 'Status', '']} exportName="Branches">
             {[...(branches ?? [])].sort((a, b) => nameOf(regions, a.region_id).localeCompare(nameOf(regions, b.region_id)) || a.name.localeCompare(b.name)).map((b) => (
               <tr key={b.id}><Td className="font-medium text-slate-900">{b.name}</Td><Td className="font-mono text-xs">{b.code}</Td><Td>{nameOf(regions, b.region_id)}</Td><Td>{nameOf(clusters, b.cluster_id)}</Td><Td><Head names={heads?.branches[b.id]} none={b.region_id && heads?.regions[b.region_id]?.length ? 'No BM: RBH answers' : 'No BM, no RBH'} /></Td><Td><Badge value={b.status} /></Td>
                 <Td><Button small variant="ghost" aria-label={`Edit ${b.name}`} onClick={() => setEditing({ kind: 'branch', item: b })}><Pencil size={14} aria-hidden="true" /></Button></Td></tr>

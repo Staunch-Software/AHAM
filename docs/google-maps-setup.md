@@ -30,7 +30,7 @@ pages always show the accuracy (±m); treat the name as a convenience and the co
 2. Credentials -> Create credentials -> API key. Open it and set *API restrictions* = Geocoding API only, and
    *Application restrictions* as in the table. (A Docker/home connection has no stable IP, so use **None** in development
    and the server's IP in production.)
-3. Put it in `C:\Staunch\fieldsync\.env` (production: `.env.prod`). Never paste it in chat, email or code:
+3. Put it in `C:\Staunch\AHAM\AHAM\.env` (production: `.env.prod`). Never paste it in chat, email or code:
    ```
    GEOCODER=google
    GOOGLE_MAPS_API_KEY=your-server-key
@@ -47,7 +47,7 @@ pages always show the accuracy (±m); treat the name as a convenience and the co
 2. Create a second API key. *API restrictions* = Maps JavaScript API only. *Application restrictions* = Websites, with
    `http://localhost:5173/*` (development). Add your real address, for example `https://app.yourcompany.com/*`, for production.
    This key is visible in the browser by design; the website restriction is what protects it.
-3. Put it in `C:\Staunch\fieldsync\admin-web\.env.local` (this file is git-ignored):
+3. Put it in `C:\Staunch\AHAM\AHAM\admin-web\.env.local` (this file is git-ignored):
    ```
    VITE_GOOGLE_MAPS_API_KEY=your-browser-key
    ```

@@ -26,7 +26,7 @@ export default function CallPerformance() {
           </div>
           <Card flush>
             {!data.callers.length ? <EmptyState icon={<BarChart3 size={20} />} title="No tries in this period." /> : (
-              <Table head={['Caller', 'Entries', 'Tries', 'Connected', 'Unanswered', 'Validated', 'Connect rate']}>
+              <Table head={['Caller', 'Entries called', 'Calls made', 'Connected calls', 'Calls not answered', 'Entries validated', 'Connected (% of calls)']} exportName="Caller performance">
                 {data.callers.map((c) => (
                   <tr key={c.caller_id}><Td className="font-medium">{c.name}</Td><Td className="tabular">{c.entries}</Td><Td className="tabular">{c.attempts}</Td>
                     <Td className="tabular">{c.connected}</Td><Td className="tabular">{c.unanswered}</Td><Td className="tabular">{c.validated}</Td><Td className="tabular">{pct(c.connected, c.attempts)}</Td></tr>

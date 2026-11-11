@@ -2,8 +2,9 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Flag, GanttChartSquare, IdCard, Search } from 'lucide-react'
 import { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Card, EmptyState, ErrorBox, Input, PageTitle, Pager, RagBadge, Select, Skeleton, StatusText, Table, Td } from '../../components/ui'
+import { Card, EmptyState, ErrorBox, Input, PageTitle, Pager, RAG_LABEL, RagBadge, Select, Skeleton, StatusText, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
+import { allPages, type Cells } from '../../services/exporting'
 import { useAuth } from '../../services/auth'
 import { fmtParts } from '../../services/format'
 import { useBranches, useMeta } from '../../services/meta'
@@ -36,12 +37,12 @@ export function EntryFilters({ params, onChange, extra }: { params: URLSearchPar
       </Select>
       <Select aria-label="RAG" value={params.get('rag') ?? ''} onChange={(e) => set('rag', e.target.value)}>
         <option value="">Any RAG</option>
-        {meta?.rags.map((r) => <option key={r} value={r}>{r}</option>)}
+        {meta?.rags.map((r) => <option key={r} value={r}>{RAG_LABEL[r] ?? r}</option>)}
       </Select>
       <Select aria-label="Status" value={params.get('status') ?? ''} onChange={(e) => set('status', e.target.value)}>
         <option value="">Any status</option>
-        <option value="Pending">Not yet selected</option>
-        <option value="Allocate">Waiting for first call</option>
+        <option value="Pending">Waiting for the daily selection</option>
+        <option value="Allocate">Waiting for the first call</option>
         {meta?.statuses.map((s) => <option key={s} value={s}>{s}</option>)}
       </Select>
       <label className="flex items-center gap-2 text-xs text-slate-500">From<Input type="date" value={params.get('date_from') ?? ''} onChange={(e) => set('date_from', e.target.value)} /></label>
@@ -51,9 +52,24 @@ export function EntryFilters({ params, onChange, extra }: { params: URLSearchPar
   )
 }
 
-export function EntryTable({ rows, link }: { rows: EntryRow[]; link: (r: EntryRow) => string }) {
+/** The columns of an entries export: one fact per column, in plain words. */
+const ENTRY_EXPORT: [string, (r: EntryRow) => Cells[number]][] = [
+  ['Entry ID', (r) => r.entry_code], ['Person met', (r) => r.person_name], ['Mobile number', (r) => r.phone],
+  ['Category', (r) => r.category_label], ['CP sub-type', (r) => r.cp_subtype_label], ['Sales Officer', (r) => r.so_name],
+  ['Emp ID', (r) => r.so_employee_code], ['Branch', (r) => r.branch_name], ['Region', (r) => r.region_name],
+  ['Entry date', (r) => r.entry_date], ['Entered at (phone time)', (r) => r.submitted_at_device], ['Current status', (r) => r.current_status],
+  ['RAG', (r) => RAG_LABEL[r.rag] ?? r.rag], ['Next action (SO / branch)', (r) => r.so_action], ['Next action date', (r) => r.so_action_date],
+  ['Call-centre action', (r) => r.cc_action], ['Call-centre action date', (r) => r.cc_action_date], ['TCS ID (login)', (r) => r.tcs_id],
+  ['Customer validated', (r) => (r.customer_validated ? 'Yes' : 'No')], ['Sankalp success', (r) => (r.sankalp_success ? 'Yes' : 'No')],
+]
+
+export function EntryTable({ rows, link, exportName, exportAll }: {
+  rows: EntryRow[]; link: (r: EntryRow) => string; exportName?: string; exportAll?: () => Promise<EntryRow[]>
+}) {
   return (
-    <Table head={['Entry', 'Person met', 'Category', 'Sales Officer', 'Made', 'Status', 'RAG', 'Next action']}>
+    <Table head={['Entry ID', 'Person met (mobile number)', 'Category', 'Sales Officer (Emp ID · branch)', 'Entered on (phone time)', 'Current status', 'RAG', 'Next action']}
+      exportName={exportName} exportHeader={ENTRY_EXPORT.map(([h]) => h)}
+      exportAll={async () => ((exportAll ? await exportAll() : rows).map((r) => ENTRY_EXPORT.map(([, f]) => f(r))))}>
       {rows.map((r) => {
         const made = fmtParts(r.submitted_at_device)
         return (
@@ -65,11 +81,11 @@ export function EntryTable({ rows, link }: { rows: EntryRow[]; link: (r: EntryRo
                 {r.tcs_id && <span className="inline-flex items-center gap-0.5 text-sky-700"><IdCard size={11} aria-hidden="true" />{r.tcs_id}</span>}
               </div>
             </Td>
-            <Td><div className="font-medium text-slate-900">{r.person_name}</div><div className="tabular text-xs text-slate-500">{r.phone}</div></Td>
+            <Td><div className="font-medium text-slate-900">{r.person_name}</div><div className="tabular text-xs text-slate-500">Mobile: {r.phone}</div></Td>
             <Td>{r.category_label}{r.cp_subtype_label && <div className="text-xs text-slate-500">{r.cp_subtype_label}</div>}</Td>
             <Td><div>{r.so_name}</div><div className="text-xs text-slate-500">{r.so_employee_code} · {r.branch_name}</div></Td>
             <Td className="whitespace-nowrap">{made?.date}<div className="text-xs text-slate-500">{made?.time}{r.device_time_suspect && ' · check time'}</div></Td>
-            <Td><StatusText status={r.status} selection={r.selection_status} callGroup={r.call_group} />{r.lead_outcome && <div className="text-xs font-medium text-sky-700">{r.lead_outcome}</div>}</Td>
+            <Td><StatusText value={r.current_status} /></Td>
             <Td><RagBadge value={r.rag} overridden={r.rag_overridden} /></Td>
             <Td className="text-xs">
               {r.so_action && <div><span className="font-medium text-slate-800">{r.so_action}</span>{r.so_action_date && ` · ${r.so_action_date}`}</div>}
@@ -101,7 +117,7 @@ export default function EntryList() {
       <Card flush>
         {isLoading || !data ? <div className="space-y-2 p-5">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-10" />)}</div>
           : data.items.length === 0 ? <EmptyState icon={<GanttChartSquare size={20} />} title="No entries match these filters." />
-            : <EntryTable rows={data.items} link={(r) => path(`entries/${r.id}`)} />}
+            : <EntryTable rows={data.items} link={(r) => path(`entries/${r.id}`)} exportName="Entries" exportAll={() => allPages<EntryRow>('/entries', entryParams(params))} />}
         {data && data.total > 0 && <Pager page={page} pageSize={25} total={data.total} onChange={(p) => { const n = new URLSearchParams(params); n.set('page', String(p)); setParams(n) }} />}
       </Card>
     </>

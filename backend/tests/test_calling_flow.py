@@ -320,7 +320,7 @@ async def test_branch_codes_rbh_priority_category_green_channel(client, tenant_a
     assert queue[0]["entry_code"] == gc["entry_code"] and queue[0]["loan_requirement"] == 700_000
     r = await client.post(f"/api/v1/calls/green-channel/{queue[0]['answer_id']}", headers=await f("master"),
                           json={"accept_reject": False})
-    assert r.json()["lead_outcome"] is None and r.json()["so_action"] == R.ACT_FOLLOW_UP_LEAD  # back to the branch
+    assert r.json()["lead_outcome"] is None and r.json()["so_action"] == R.ACT_GREEN_LOGIN  # back to the branch, to log in
     r = await client.post(url, headers=await f("bm1"), json={"code": "R3"})
     aid = (await client.get("/api/v1/calls/green-channel", headers=await f("master"))).json()[0]["answer_id"]
     r = await client.post(f"/api/v1/calls/green-channel/{aid}", headers=await f("master"), json={"accept_reject": True})
@@ -369,8 +369,9 @@ async def test_login_register_rules(client, tenant_a, clock):
     ea, eb, ec, ed = [await f.get(x["id"]) for x in (a, b, c, d)]
     assert ea["lead_outcome"] == eb["lead_outcome"] == R.LOGGED_IN
     assert ea["sankalp_success"] and not eb["sankalp_success"]  # one success per TCS ID: the earliest entry
-    assert ea["customer_validated"] and eb["customer_validated"]  # both validated by the login...
-    assert ea["first_validation"] and not eb["first_validation"]  # ...but paid once per customer
+    # a login validates only the entry that is the Sankalp success for that TCS ID (Takeoff master): paid once
+    assert ea["customer_validated"] and not eb["customer_validated"]
+    assert ea["first_validation"] and not eb["first_validation"]
     assert ec["lead_outcome"] == R.LOGIN_BEFORE_ENTRY and not ec["customer_validated"]
     assert ed["lead_outcome"] == R.LOGGED_IN and ed["sankalp_success"] and not ed["customer_validated"]  # LAP
 

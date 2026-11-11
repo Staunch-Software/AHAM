@@ -59,7 +59,7 @@ export default function Compliance() {
         {isLoading || !data ? <div className="space-y-2 p-5">{Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-10" />)}</div>
           : data.items.length === 0 ? <EmptyState icon={<BarChart3 size={20} />} title="No Sales Officers in your scope." />
             : (
-              <Table head={['Sales Officer', 'Branch', 'Attendance', 'Entries', `Shortfall (of ${data.entry_target})`, `Lead/Prospect (of ${data.lead_target})`]}>
+              <Table head={['Sales Officer', 'Branch', 'Attendance', 'Entries', `Shortfall (of ${data.entry_target})`, `Lead/Prospect (of ${data.lead_target})`]} exportName="Daily compliance">
                 {data.items.map((r) => (
                   <tr key={r.so_user_id}>
                     <Td><div className="font-medium text-slate-900">{r.name}</div><div className="text-xs text-slate-500">{r.emp_code}{r.designation && ` · ${r.designation}`}</div></Td>

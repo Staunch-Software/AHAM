@@ -1,0 +1,11 @@
+Loan account number,Disbursement reference,Disbursement date,Product,Branch,Disbursed amount,Tenure in months,ROI %,Status,Customer name
+HL1001,1,07-11-2026,Home Loan,Vijayawada,3000000,240,9.00,Disbursed,Ravi Teja
+LAP2001,,07-11-2026,LAP,Vijayawada,500000,60,12.00,Disbursed,Asha Devi
+HL1002,,03-11-2026,Home Loan,Guntur,1500000,180,9.50,Disbursed,Kiran Babu
+HL1003,1,20-10-2026,Home Loan,Vijayawada,2000000,240,8.75,Disbursed,Sunitha Rao
+HL1003,2,05-11-2026,Home Loan,Vijayawada,1000000,240,8.75,Disbursed,Sunitha Rao
+LAP2002,,15-08-2026,LAP,Nellore,800000,84,13.50,Disbursed,Ramesh Babu
+HL1004,,02-11-2026,Home Loan,Nellore,2500000,300,8.90,Cancelled,Prasad Rao
+HL1005,,06-11-2026,Home Loan,Guntur,1200000,,9.25,Disbursed,Lalitha Devi
+HL1006,,31-03-2026,Home Loan,Vijayawada,4000000,240,8.50,Disbursed,Old Year Customer
+LAP2003,,31-02-2026,LAP,Guntur,600000,72,12.25,Disbursed,Wrong Date

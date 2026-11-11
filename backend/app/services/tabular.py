@@ -1,13 +1,19 @@
 """Reading uploaded CSV / Excel files (roster, attendance, login register) into plain rows."""
 import csv
+import difflib
 import io
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from fastapi import HTTPException
 
 MAX_ROWS = 50_000
+
+
+class Rows(list):
+    """The rows of an upload, plus the file's own column names (normalised name -> as written in the file)."""
+    headers: dict[str, str]
 
 
 def norm_header(h: Any) -> str:
@@ -44,7 +50,8 @@ def read_table(filename: str, data: bytes) -> list[dict[str, Any]]:
     if len(rows) > MAX_ROWS + 1:
         raise HTTPException(422, f"The file has more than {MAX_ROWS} rows; split it into smaller files")
     header = [norm_header(h) for h in rows[0][1]]
-    out = []
+    out = Rows()
+    out.headers = {norm_header(h): str(h).strip() for h in rows[0][1] if norm_header(h)}
     for line, r in rows[1:]:
         rec: dict[str, Any] = {"_row": line}
         for h, v in zip(header, r):
@@ -64,6 +71,37 @@ def pick(row: dict, aliases: list[str]) -> Any:
 
 def has_column(rows: list[dict], aliases: list[str]) -> bool:
     return any(a in r for r in rows[:1] for a in aliases)
+
+
+def column_name(rows: list[dict], aliases: list[str]) -> str:
+    """The column as the file names it ("Emp Code"), else the expected name ("Emp ID"), for error messages."""
+    headers = getattr(rows, "headers", {})
+    for a in aliases:
+        if a in headers:
+            return headers[a]
+    return aliases[0].title().replace("Id", "ID")
+
+
+def require_columns(rows: list[dict], required: dict[str, list[str]], what: str) -> None:
+    """A 422 that names every missing column and lists the columns the file has."""
+    missing = [label for label, aliases in required.items() if not has_column(rows, aliases)]
+    if missing:
+        found = ", ".join(f"'{h}'" for h in getattr(rows, "headers", {}).values()) or "none"
+        raise HTTPException(422, f"The {what} is missing the column{'s' if len(missing) > 1 else ''} "
+                                 f"{', '.join(repr(m) for m in missing)}. Columns found in the file: {found}. "
+                                 "Download the template to see the expected columns.")
+
+
+def row_error(row: int, column: str | None, value: Any, message: str, **extra: Any) -> dict:
+    """One problem in an uploaded file: where it is, what was found and what to do about it."""
+    shown = "" if value is None else (value.isoformat() if isinstance(value, (date, datetime)) else str(value))
+    return {"row": row, "column": column, "value": shown, "message": message, **extra}
+
+
+def did_you_mean(value: str, choices: list[str]) -> str:
+    """" Did you mean 'Vijayawada'?" when a name is close to a known one, else ""."""
+    close = difflib.get_close_matches(value, choices, n=2, cutoff=0.6)
+    return f" Did you mean {' or '.join(repr(c) for c in close)}?" if close else ""
 
 
 _DATE_FORMATS = ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y", "%d-%b-%Y", "%d %b %Y", "%d-%b-%y", "%d/%m/%y",
@@ -89,7 +127,27 @@ def parse_date(v: Any) -> date | None:
             return datetime.strptime(s, fmt).date()
         except ValueError:
             continue
-    raise ValueError(f"'{v}' is not a date (use YYYY-MM-DD or DD-MM-YYYY)")
+    raise ValueError(f"'{v}' is not a date. Write it as DD-MM-YYYY (for example 05-11-2026) or YYYY-MM-DD")
+
+
+def parse_time(v: Any) -> time | None:
+    """A time of day: "10:30", "10:30:15", "10.30", "2:45 PM", an Excel time. Raises ValueError otherwise."""
+    if v in (None, ""):
+        return None
+    if isinstance(v, datetime):
+        return v.time().replace(microsecond=0)
+    if isinstance(v, time):
+        return v.replace(microsecond=0)
+    if isinstance(v, (int, float)) and 0 <= float(v) < 1:  # Excel stores a time as a fraction of a day
+        secs = round(float(v) * 86400)
+        return time(secs // 3600 % 24, secs // 60 % 60, secs % 60)
+    s = str(v).strip().upper().replace(".", ":")
+    for fmt in ("%H:%M", "%H:%M:%S", "%I:%M %p", "%I:%M:%S %p", "%I:%M%p", "%I %p"):
+        try:
+            return datetime.strptime(s, fmt).time()
+        except ValueError:
+            continue
+    raise ValueError(f"'{v}' is not a time. Write it as HH:MM, for example 10:30 or 14:45 (or 2:45 PM)")
 
 
 def text(v: Any, max_len: int) -> str | None:
