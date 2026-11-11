@@ -73,12 +73,10 @@ async def answer_lead(s: AsyncSession, e: SankalpEntry, user: User, body: Branch
     s.add(a)
     if body.code == "2":  # category wrong: goes to the Sankalp monitor
         e.category_review = "pending"
-    if body.code == "3":  # customer not answering the branch: the call centre retries at once, as priority
-        e.priority, e.priority_reason = True, "Branch: customer not answering"
     event(s, e, "branch_answer", user.id, code=body.code, date=body.answer_date, green_channel=a.green_channel)
     await s.flush()
     await recompute(s, e, cfg=cfg, today=today)
-    if e.priority:
+    if e.priority:  # code 3: the customer is not answering the branch: the call centre retries at once (6.2)
         await put_on_list_now(s, e, today)
     return a
 
@@ -105,7 +103,8 @@ async def review_green_channel(s: AsyncSession, answer: BranchAnswer, user: User
 
 # ================================================================ 13 corrections
 async def correct_number(s: AsyncSession, e: SankalpEntry, user: User, new_phone_raw: str) -> SankalpEntry:
-    """13.2: the right number, given through the BM or RTM within the window. The entry is called again
+    """13.2: the right number, given through the BM or RTM while the "Correct customer number" action is open
+    (15 days from the call that found the wrong number, as the Takeoff master). The entry is called again
     automatically with a fresh count of tries; the Entry ID stays."""
     if user.role == "region_manager":
         # The BM or RTM corrects numbers; the RBH steps in only for a branch that has neither (as for answers, 12.4).
@@ -115,10 +114,10 @@ async def correct_number(s: AsyncSession, e: SankalpEntry, user: User, new_phone
                                       "message": "This branch's BM or RTM corrects its numbers (the RBH only where it has neither)"})
     cfg = await load_settings(s, e.company_id)
     today = await company_today(s, e.company_id)
-    if (today - e.entry_date).days > cfg.amber_correction_window_days:
-        raise HTTPException(409, {"code": "window_closed", "message": f"Numbers can be corrected within {cfg.amber_correction_window_days} days of the entry"})
-    if e.so_action != R.ACT_CORRECT_NUMBER:
-        raise HTTPException(409, {"code": "no_correction_open", "message": "This entry has no 'Correct customer number' action"})
+    if e.so_action != R.ACT_CORRECT_NUMBER or (e.so_action_until and e.so_action_until < today):
+        raise HTTPException(409, {"code": "no_correction_open",
+                                  "message": "This entry has no open 'Correct customer number' action (it is open for "
+                                             f"{cfg.correct_number_window_days} days from the call)"})
     phone = clean_phone(new_phone_raw)
     if not is_valid_phone(phone):
         raise HTTPException(422, {"code": "invalid_phone", "message": "Enter a valid 10-digit mobile number starting with 6, 7, 8 or 9"})
@@ -198,9 +197,7 @@ async def save_tracker(s: AsyncSession, e: SankalpEntry, user: User, body: Track
         if held:
             held.green_channel, held.reviewed_by, held.reviewed_at = "returned", user.id, datetime.now(timezone.utc)
             event(s, e, "green_channel", user.id, decision="returned", via="tracker")
-        elif not tr or tr.outcome != R.TRACKER_RETURN_GREEN:
-            raise HTTPException(409, {"code": "no_green_channel_hold",
-                                      "message": "No green-channel R2/R3 rejection is waiting for this lead"})
+        # with no R2/R3 waiting, the master owner can still send the lead back to the branch (the Takeoff master)
     if tr is None:
         tr = FollowupTracker(entry_id=e.id, company_id=e.company_id)
         s.add(tr)
@@ -208,14 +205,15 @@ async def save_tracker(s: AsyncSession, e: SankalpEntry, user: User, body: Track
         setattr(tr, k, v.strip() if isinstance(v, str) else v)
     tr.tcs_id = tr.tcs_id or None
     tr.updated_by, tr.updated_at = user.id, datetime.now(timezone.utc)
-    if body.immediate_callback or body.outcome == "Reopen for calling":
-        e.priority, e.priority_reason = True, "Master owner: immediate call-back" if body.immediate_callback else "Reopened for calling"
     event(s, e, "tracker", user.id, owner=body.owner, outcome=body.outcome, followup_date=body.followup_date,
           tcs_id=body.tcs_id, rag_override=body.rag_override)
     await s.flush()
     await recompute(s, e)
-    if e.priority:
-        await put_on_list_now(s, e, await company_today(s, e.company_id))
+    # called today only when due today: a PRIORITY entry, or a reopen whose date is today or earlier
+    today = await company_today(s, e.company_id)
+    reopen_due = body.outcome == R.TRACKER_REOPEN and e.status == R.IN_RETRY and (e.callback_date or today) <= today
+    if e.priority or reopen_due:
+        await put_on_list_now(s, e, today, kind="priority" if e.priority else "retry")
     return tr
 
 

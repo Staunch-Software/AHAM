@@ -70,6 +70,8 @@ ALL_STATUSES = NOT_CALLED + [IN_RETRY, DISCARDED_9, DISCARDED_INVALID, CLOSED_NO
                              ALREADY_IN_PROCESS, NOT_COUNTED_LAP, AMBER_MISSING, AMBER_KNOWS_SO, AMBER_WRONG_PERSON,
                              RED, DSA_GREEN, DSA_NA, DSA_AMBER, DSA_RED, DSA_NO_RAG]
 LEAD_OUTCOMES = [LOGGED_IN, OUTCOME_REJECTED, LOGIN_BEFORE_ENTRY]
+# an entry with one of these outcomes is closed: no action, no more calls, RAG NA (Takeoff master)
+CLOSED_OUTCOMES = {LOGGED_IN, OUTCOME_REJECTED, LOGIN_BEFORE_ENTRY}
 
 RAGS = ["PENDING", "NA", "RED", "AMBER", "RNR", "GREEN"]
 # what each RAG code is called on screens and in files ("RNR" was unclear to readers)

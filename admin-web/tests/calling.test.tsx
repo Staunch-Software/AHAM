@@ -78,7 +78,7 @@ test('a callback needs its date before it can be saved', async () => {
   renderApp('/callcentre/calls/e1')
   await userEvent.click(await screen.findByRole('button', { name: 'Callback requested' }))
   expect(screen.getByRole('button', { name: 'Save try' })).toBeDisabled()
-  expect(screen.getByLabelText('Call back on (working day)')).toBeInTheDocument()
+  expect(screen.getByLabelText(/^Call back on \(working day\)/)).toBeInTheDocument()
 })
 
 test('the lead card appears once a loan type is known and refuses a lead ID without the loan requirement', async () => {

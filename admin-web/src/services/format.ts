@@ -60,3 +60,19 @@ export function parseWhole(s?: string | null): number | null | 'bad' {
 
 /** True for a YYYY-MM-DD that falls on a Sunday (dates offered to callers are working days, 7.2). */
 export const isSunday = (iso?: string | null) => !!iso && new Date(`${iso}T00:00:00`).getDay() === 0
+
+const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+/** The dates a caller may give as a call's Next date (the Takeoff call sheet): from tomorrow up to 30 working days
+ * ahead, Sundays not counted. The server also skips the company's holidays. */
+export function nextDateRange(today: Date = new Date(), workingDays = 30): { min: string; max: string } {
+  const d = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  d.setDate(d.getDate() + 1)
+  const min = isoDay(d)
+  let n = d.getDay() === 0 ? 0 : 1
+  while (n < workingDays) {
+    d.setDate(d.getDate() + 1)
+    if (d.getDay() !== 0) n += 1
+  }
+  return { min, max: isoDay(d) }
+}

@@ -31,11 +31,21 @@ def valid_phone_or_none(raw) -> str | None:
     return c if is_valid_phone(c) else None
 
 
+def last_ten(raw: str | int | float | None) -> str | None:
+    """The last 10 digits of a longer number, when they are a valid mobile (the Takeoff master matches the login
+    register on RIGHT(number, 10))."""
+    if raw is None:
+        return None
+    digits = _NOT_DIGIT.sub("", _TRAILING_DOT_ZERO.sub("", str(raw).strip()))
+    return digits[-10:] if len(digits) > 10 and is_valid_phone(digits[-10:]) else None
+
+
 def split_contacts(cell: str | int | float | None) -> list[str]:
     """Every valid number in a login-register contact cell (up to 3, separated by , / & ; or spaces).
 
     A part is first cleaned whole, so "+91 98765 43210" stays one number; only if that is not valid is it split on
-    spaces. Order is kept and repeats are dropped."""
+    spaces. A longer number that still is not valid gives its last 10 digits, as the Takeoff master matches.
+    Order is kept and repeats are dropped."""
     if cell is None:
         return []
     if isinstance(cell, (int, float)):
@@ -43,7 +53,12 @@ def split_contacts(cell: str | int | float | None) -> list[str]:
     found: list[str] = []
     for part in _CONTACT_SPLIT.split(str(cell)):
         whole = valid_phone_or_none(part)
-        candidates = [whole] if whole else [valid_phone_or_none(t) for t in part.split()]
+        if whole:
+            candidates = [whole]
+        else:
+            candidates = [valid_phone_or_none(t) or last_ten(t) for t in part.split()]
+            if not any(candidates):
+                candidates = [last_ten(part)]
         for c in candidates:
             if c and c not in found:
                 found.append(c)

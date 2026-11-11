@@ -24,8 +24,10 @@ from app.models import (
     SelectionRun,
     User,
 )
+from app.services.calendar import next_date_problem
 from app.services.periods import today_local, tz_of
 from app.services.phone import is_valid_phone
+from app.services.reference import holiday_set
 from app.services.sankalp import engine as E
 from app.services.sankalp import rules as R
 from app.services.sankalp.schemas import AttemptIn, LeadCardIn
@@ -81,13 +83,14 @@ async def load_state(s: AsyncSession, e: SankalpEntry, cfg: SankalpSettings) -> 
                           .order_by(BranchAnswer.created_at.desc()).limit(1))).scalar_one_or_none()
     tr = await s.get(FollowupTracker, e.id)
     card = await s.get(LeadCard, e.id)
+    tz = tz_of((await s.get(Company, e.company_id)).timezone)
     return E.EntryState(
         entry_date=e.entry_date, call_group=e.call_group, selection_status=e.selection_status, call_cycle=e.call_cycle,
         attempts=[E.Attempt(a.call_date, a.outcome, a.row_status, a.answers, a.next_date, a.cycle, a.created_at)
                   for a in attempts],
         branch_answer=E.BranchAns(ba.code, ba.answer_date, ba.responded_on, ba.green_channel, ba.created_at) if ba else None,
         tracker=E.Tracker(tr.owner, tr.followup_date, tr.outcome, tr.tcs_id, tr.rag_override, tr.immediate_callback,
-                          tr.updated_at.date(), tr.action_type, tr.updated_at) if tr else None,
+                          tr.updated_at.astimezone(tz).date(), tr.action_type, tr.updated_at) if tr else None,
         login=await best_login(s, e.company_id, e.phone, e.entry_date, cfg.duplicate_tcs_rule),
         loan_requirement=card.loan_requirement if card else None,
     )
@@ -114,7 +117,8 @@ async def recompute(s: AsyncSession, e: SankalpEntry, *, cfg: SankalpSettings | 
         event(s, e, "action.expired", None, action=d.expired_action, on=d.expired_on)
     e.expired_action, e.expired_on = d.expired_action, d.expired_on
     tr = st.tracker
-    login = st.login or (E.Login(tr.tcs_id, None, None, "manual") if tr and tr.tcs_id else None)
+    # a TCS ID typed by the master owner overrides the register (Takeoff master)
+    login = E.Login(tr.tcs_id, None, None, "manual") if tr and tr.tcs_id else st.login
     e.tcs_id = login.tcs_id if login else None
     e.login_date = login.login_date if login else None
     e.login_source = login.source if login else None
@@ -251,14 +255,13 @@ async def caller_of_day(s: AsyncSession, company_id: uuid.UUID, day: date) -> di
 
 
 async def put_on_list_now(s: AsyncSession, e: SankalpEntry, today: date, kind: str = "priority") -> None:
-    """An entry called at once, not at the next run: a PRIORITY entry (6.2), or a corrected number (13.2). It goes on
-    today's list of the tracker's caller or the caller who first handled it, else of the branch's caller of the day
-    (unassigned if there is none)."""
+    """An entry called at once, not at the next run: a PRIORITY entry (6.2), a reopen due today, or a corrected
+    number (13.2). As the Takeoff master, it goes on today's list of the caller who first handled it, else of the
+    branch's caller of the day (unassigned if there is none)."""
     if (await s.execute(select(CallAllocation.id).where(CallAllocation.entry_id == e.id,
                                                         CallAllocation.status == "open").limit(1))).first():
         return  # already on a list
-    caller = (await s.execute(select(FollowupTracker.caller_id).where(FollowupTracker.entry_id == e.id))).scalar() \
-        or e.first_caller_id
+    caller = e.first_caller_id
     u = await s.get(User, caller) if caller else None
     if not u or u.role != "caller" or u.status != "active":
         caller = (await caller_of_day(s, e.company_id, today)).get(e.branch_id)
@@ -266,8 +269,9 @@ async def put_on_list_now(s: AsyncSession, e: SankalpEntry, today: date, kind: s
 
 
 async def allocate(s: AsyncSession, company_id: uuid.UUID, run_date: date) -> dict:
-    """Section 6. New entries go to their branch's caller of the day; retries, priority and follow-ups to the caller
-    who first handled the entry. Entries already on a list today are left alone."""
+    """Section 6. New entries go to their branch's caller of the day; retries and priority to the caller who first
+    handled the entry; follow-ups to the tracker's caller, else the caller who created the lead ID, else the first
+    caller (the Takeoff master). Entries already on a list today are left alone."""
     branch_caller = await caller_of_day(s, company_id, run_date)
     active_callers = set((await s.execute(select(User.id).where(User.company_id == company_id, User.role == "caller",
                                                                 User.status == "active"))).scalars().all())
@@ -280,7 +284,7 @@ async def allocate(s: AsyncSession, company_id: uuid.UUID, run_date: date) -> di
     for entry_id, actor in (await s.execute(select(EntryEvent.entry_id, EntryEvent.actor_id).where(
             EntryEvent.company_id == company_id, EntryEvent.kind == "lead_id").order_by(EntryEvent.created_at))).all():
         lead_id_by[entry_id] = actor
-    not_closed = or_(SankalpEntry.lead_outcome.is_(None), SankalpEntry.lead_outcome.notin_([R.LOGGED_IN, R.OUTCOME_REJECTED]))
+    not_closed = or_(SankalpEntry.lead_outcome.is_(None), SankalpEntry.lead_outcome.notin_(R.CLOSED_OUTCOMES))
     not_today = or_(SankalpEntry.last_called_on.is_(None), SankalpEntry.last_called_on < run_date)
     base = [SankalpEntry.company_id == company_id, not_closed, not_today]
     queries = {
@@ -302,11 +306,12 @@ async def allocate(s: AsyncSession, company_id: uuid.UUID, run_date: date) -> di
             if kind == "fresh":
                 caller = branch_caller.get(e.branch_id)
             else:
-                # the tracker's caller, then (for a follow-up) the caller who created the lead ID, then the caller who
-                # first handled the entry; the branch's caller of the day when none of them is an active caller
-                lead_id_caller = lead_id_by.get(e.id) if kind == "followup" and e.cc_action == R.CC_FOLLOW_UP else None
-                caller = next((c for c in (trackers.get(e.id), lead_id_caller, e.first_caller_id) if c in active_callers),
-                              branch_caller.get(e.branch_id))
+                # retry / priority: the caller who first handled the entry; a follow-up: the tracker's caller, then the
+                # caller who created the lead ID, then the first caller. The branch's caller of the day when none of
+                # them is an active caller.
+                order = (e.first_caller_id,) if kind in ("retry", "priority") else (
+                    trackers.get(e.id), lead_id_by.get(e.id) if e.cc_action == R.CC_FOLLOW_UP else None, e.first_caller_id)
+                caller = next((c for c in order if c in active_callers), branch_caller.get(e.branch_id))
             s.add(CallAllocation(company_id=company_id, entry_id=e.id, caller_id=caller, run_date=run_date, kind=kind))
             already.add(e.id)
             made[kind] += 1
@@ -322,6 +327,9 @@ async def record_attempt(s: AsyncSession, e: SankalpEntry, user: User, body: Att
     today = await company_today(s, e.company_id)
     if e.lead_outcome == R.LOGGED_IN:
         raise HTTPException(409, {"code": "logged_in", "message": "This lead has logged in; it is not called again"})
+    if e.lead_outcome == R.LOGIN_BEFORE_ENTRY:
+        raise HTTPException(409, {"code": "login_before_entry",
+                                  "message": "This customer logged in on or before the entry date; it is not called"})
     mine = (await s.execute(select(CallAllocation).where(CallAllocation.entry_id == e.id, CallAllocation.status == "open")
                             )).scalars().all()
     if user.role == "caller" and not any(a.caller_id == user.id for a in mine):
@@ -346,8 +354,10 @@ async def record_attempt(s: AsyncSession, e: SankalpEntry, user: User, body: Att
                                cfg_tries_dsa=cfg.tries_per_day_dsa)
     if reason and not e.priority:
         raise HTTPException(409, {"code": "attempt_limit", "message": reason})
-    if body.next_date and body.next_date < today:
-        raise HTTPException(422, {"code": "date_in_past", "message": "The callback date is in the past"})
+    holidays = await holiday_set(s, e.company_id, today)
+    for d in (body.next_date, body.answers.next_date if body.answers else None):
+        if d and (reason := next_date_problem(d, today, holidays)):
+            raise HTTPException(422, {"code": "next_date", "message": reason})
     answers = body.answers.model_dump(mode="json", exclude_none=True) if body.answers else None
     if body.outcome == R.CONNECTED and e.call_group == "lead" and answers:
         answers.pop("dsa_rag", None)
@@ -368,10 +378,10 @@ async def record_attempt(s: AsyncSession, e: SankalpEntry, user: User, body: Att
     if e.first_caller_id is None and user.role == "caller":
         e.first_caller_id = user.id
     await s.flush()
-    # The entry leaves today's list once the call is final, a callback is set, or today's tries are used up.
+    # The entry leaves today's list once the call is final, a next date is set, or today's tries are used up.
     tries_today = len(cycle_today) + 1
     per_day = cfg.tries_per_day_dsa if rules_group == "dsa_cp" else cfg.tries_per_day_lead
-    if row != R.IN_RETRY or body.outcome == R.CALLBACK or tries_today >= per_day:
+    if row != R.IN_RETRY or body.outcome == R.CALLBACK or body.next_date or tries_today >= per_day:
         for al in mine:
             al.status, al.closed_at = "done", datetime.now(timezone.utc)
     event(s, e, "call", user.id, slot=body.slot, outcome=body.outcome, status=row)
@@ -403,8 +413,10 @@ async def save_lead_card(s: AsyncSession, e: SankalpEntry, user: User, body: Lea
     changes = {k: [before.get(k), after.get(k)] for k in sorted(set(before) | set(after)) if before.get(k) != after.get(k)}
     card.data, card.handling_branch_id = data, body.handling_branch_id
     card.loan_requirement, card.lead_id, card.updated_by = body.loan_requirement, body.lead_id, user.id
-    # 7.4: another branch works the lead when the property is in its area; credit stays with the SO's branch
-    e.work_branch_id = body.handling_branch_id if body.handling_branch_id and body.handling_branch_id != e.branch_id else None
+    # 7.4: another branch works the lead when the property is in its area; credit stays with the SO's branch.
+    # As the Takeoff master, the handling branch applies once the lead has a lead ID.
+    e.work_branch_id = body.handling_branch_id if (body.handling_branch_id and body.handling_branch_id != e.branch_id
+                                                    and body.lead_id) else None
     if changes:
         event(s, e, "lead_card", user.id, changes=changes)
     if body.lead_id and body.lead_id != had_lead_id:

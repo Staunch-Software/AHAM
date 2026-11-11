@@ -22,7 +22,7 @@ export default function CallPerformance() {
             <StatCard label="Tries" value={totals.attempts} />
             <StatCard label="Connected" value={totals.connected} tone="green" hint={pct(totals.connected, totals.attempts)} />
             <StatCard label="Validated" value={totals.validated} tone="gold" />
-            <StatCard label="First try on time" value={pct(data.first_attempt_on_time, data.first_attempts)} tone="blue" hint={`Within ${data.target_days} day of the entry · ${data.first_attempts} first tries`} />
+            <StatCard label="First try on time" value={pct(data.first_attempt_on_time, data.first_attempts)} tone="blue" hint={`Validated entries first called within ${data.target_days} day of the entry · ${data.first_attempts} validated`} />
           </div>
           <Card flush>
             {!data.callers.length ? <EmptyState icon={<BarChart3 size={20} />} title="No tries in this period." /> : (

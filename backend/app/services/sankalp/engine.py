@@ -212,7 +212,9 @@ def current_status(st: EntryState) -> tuple[str | None, int, date | None, date |
         status = last.row_status
     else:
         status = R.IN_RETRY if st.call_cycle > 1 else None
-    callback = last.next_date if last and last.outcome == R.CALLBACK and status == R.IN_RETRY else None
+    # the callback date: the latest Next date given on a call that did not connect (Takeoff master)
+    dates = [a.next_date for a in cur if a.outcome != R.CONNECTED and a.next_date]
+    callback = max(dates) if dates and status == R.IN_RETRY else None
     return status, unanswered, callback, last_called, answers, last, status_call
 
 
@@ -261,7 +263,7 @@ def lead_outcome(st: EntryState, status: str | None, rejected: bool, lg: Login |
         return R.LOGGED_IN
     if rejected:
         return R.OUTCOME_REJECTED
-    if lg and lg.login_date and lg.login_date <= st.entry_date:
+    if lg and lg.source == "register" and (lg.login_date is None or lg.login_date <= st.entry_date):
         return R.LOGIN_BEFORE_ENTRY
     return None
 
@@ -269,24 +271,32 @@ def lead_outcome(st: EntryState, status: str | None, rejected: bool, lg: Login |
 def derive(st: EntryState, cfg: Settings, today: date) -> Derived:
     status, unanswered, callback, last_called, answers, last, status_call = current_status(st)
     ba, tr = st.branch_answer, st.tracker
-    # 13.3: where an entry has both a tracker row and a branch answer, the one with the later date applies
-    # (tracker: follow-up date, else the day it was saved; branch: response date).
-    tracker_wins = bool(tr) and (not ba or (tr.followup_date or tr.updated_on) >= ba.responded_on)
+    # 13.3, as the Takeoff master: the branch answer applies when its response date is on or after the tracker's
+    # follow-up date; a tracker row without a follow-up date never overrides a branch answer.
+    tracker_wins = bool(tr) and (not ba or (tr.followup_date is not None and tr.followup_date > ba.responded_on))
     branch_wins = bool(ba) and not tracker_wins
 
-    # 6.2: reopened for calling (branch code 3, the tracker's "Reopen for calling" or immediate call-back): the entry
-    # is "In retry" and called first every day until a call gives a status after the reopen, or the tries run out
+    # 6.2, as the Takeoff master: reopened for calling (branch code 3, or the tracker's "Reopen for calling") the entry
+    # is "In retry" from the reopen date (the branch's answer, or the tracker's follow-up date, else the day it was
+    # saved), with that date as its callback, until a call gives a status on or after it, or the tries run out.
+    # Branch code 3 and the master owner's immediate call-back are called first (PRIORITY); a tracker reopen alone
+    # comes back as a normal retry. An immediate call-back on its own only puts a not-yet-called entry first.
     reopen_on = reopen_at = reason = None
     if branch_wins and ba.code == "3":
         reopen_on, reopen_at, reason = ba.responded_on, ba.at, "Branch: customer not answering"
-    elif tracker_wins and (tr.outcome == R.TRACKER_REOPEN or tr.immediate_callback):
-        reopen_on, reopen_at = tr.followup_date or tr.updated_on, tr.at if not tr.followup_date else None
-        reason = "Master owner: immediate call-back" if tr.immediate_callback else "Reopened for calling"
-    reached_since = status_call is not None and (
-        status_call.at >= reopen_at if status_call.at and reopen_at else status_call.call_date > reopen_on) if reopen_on else False
-    priority = bool(reopen_on) and not reached_since and unanswered < cfg.max_unanswered
-    if priority and last is not None:
-        status, callback = R.IN_RETRY, None
+    elif tracker_wins and tr.outcome == R.TRACKER_REOPEN:
+        reopen_on, reopen_at = tr.followup_date or tr.updated_on, None if tr.followup_date else tr.at
+        reason = "Master owner: immediate call-back" if tr.immediate_callback else None
+    reopened = False
+    if reopen_on and last is not None:
+        reached = status_call is not None and (status_call.at >= reopen_at if status_call.at and reopen_at
+                                               else status_call.call_date >= reopen_on)
+        reopened = not reached and unanswered < cfg.max_unanswered
+    if reopened:
+        status, callback = R.IN_RETRY, reopen_on
+    priority = reopened and reason is not None
+    if not priority and tr and tr.immediate_callback and last is None and st.selection_status == R.ALLOCATE:
+        priority, reason = True, "Master owner: immediate call-back"
 
     rejected = False
     if branch_wins and ba.code in R.REJECT_CODES:
@@ -295,13 +305,15 @@ def derive(st: EntryState, cfg: Settings, today: date) -> Derived:
     if tracker_wins and tr.outcome == "Rejected":
         rejected = True
     login = st.login
-    if tr and tr.tcs_id and not login:  # 11.1 manual route: a TCS ID entered by the master owner counts as a login
+    if tr and tr.tcs_id:  # 11.1 manual route: a TCS ID typed by the master owner counts as a login, over the register
         login = Login(tcs_id=tr.tcs_id, login_date=None, product=None, source="manual")
     green_back = (branch_wins and ba.code in R.GREEN_CHANNEL_PROTECTED and ba.green_channel == "returned") or (
         tracker_wins and tr.outcome == R.TRACKER_RETURN_GREEN)
-    branch_lead_item = tracker_wins and tr.owner == "branch" and (tr.action_type or R.ACT_BRANCH_FOLLOWUP) in R.BRANCH_LEAD_ACTIONS
-    outcome = lead_outcome(st, status, rejected, login, lead_action=green_back or branch_lead_item)
-    closed = outcome in (R.LOGGED_IN, R.OUTCOME_REJECTED)
+    # a lead action given on the tracker (whatever its owner) makes the entry a lead (Takeoff master)
+    tracker_lead_action = tracker_wins and tr.action_type in R.LEAD_ACTIONS
+    outcome = lead_outcome(st, status, rejected, login, lead_action=green_back or tracker_lead_action)
+    # logged in, rejected, or a login on or before the entry date: nothing more to do (Takeoff master)
+    closed = outcome in R.CLOSED_OUTCOMES
 
     # ---- 12.1 SO / branch action
     so_action = so_date = so_until = None
@@ -312,7 +324,7 @@ def derive(st: EntryState, cfg: Settings, today: date) -> Derived:
     if not closed:
         if status in (R.AMBER_WRONG_PERSON, R.DISCARDED_INVALID) or st.selection_status == R.NC_NO_NUMBER:
             so_action, so_date = R.ACT_CORRECT_NUMBER, call_day or st.entry_date
-            so_until = st.entry_date + timedelta(days=cfg.correct_number_window_days)
+            so_until = so_date + timedelta(days=cfg.correct_number_window_days)  # from that call (Takeoff master)
         elif status == R.DSA_GREEN:
             so_action, so_date = R.ACT_DSA_FOLLOWUP, call_day
             so_until = (call_day or today) + timedelta(days=cfg.action_window_days)
@@ -354,11 +366,11 @@ def derive(st: EntryState, cfg: Settings, today: date) -> Derived:
                 cc_action, cc_date, so_action, so_date, so_until = R.CC_FOLLOW_UP, due, None, None, None
         if tracker_wins and tr.owner == "done":
             so_action = so_date = so_until = cc_action = cc_date = None
-        # ---- 12.2 callback
-        if status == R.IN_RETRY and callback:
+        # ---- 12.2 callback (none while the tracker gives the entry to an owner)
+        if status == R.IN_RETRY and callback and not (tracker_wins and tr.owner):
             cc_action, cc_date = R.CC_CALLBACK, callback
 
-    # 12.3: lead actions stay open until login or rejection; "correct number" for 15 days from the entry; a DSA/CP
+    # 12.3: lead actions stay open until login or rejection; "correct number" for 15 days from its call; a DSA/CP
     # follow-up for 14 days. On the call-centre side only a callback runs out (14 days after its date): a case taken
     # forward and a follow-up stay until done, as in the Takeoff master. Expired actions are not "open".
     so_open = so_action is not None and (so_until is None or so_until >= today)
@@ -397,7 +409,7 @@ def rag_for(*, status: str | None, selection_status: str | None, unanswered: int
     """Section 9 (a manual override by the master owner is applied on top, by the caller).
 
     lost_lead: Red on a lead an earlier call had validated (the need has passed); section 9 makes a lost lead NA."""
-    if lead_outcome in (R.LOGGED_IN, R.OUTCOME_REJECTED):
+    if lead_outcome in R.CLOSED_OUTCOMES:
         return "NA"
     if call_group == "none":
         return "NA"  # Existing Customer / Applicant: not called (5.1), so never "waiting to be called"
@@ -425,11 +437,13 @@ def rag_for(*, status: str | None, selection_status: str | None, unanswered: int
 # ---------------------------------------------------------------- 11.3 success, 10 first validation
 def sankalp_success_winner(candidates: list[tuple[date, str, str, bool]], takeoff_start: date) -> str | None:
     """candidates: (entry_date, entry_code, entry_id, logged_in) of every entry carrying one TCS ID.
-    The earliest entry wins (ties: lower Entry ID); it must be logged in and dated on or after Takeoff start."""
-    if not candidates:
+    As the Takeoff master: the earliest logged-in entry wins (ties: lower Entry ID), if dated on or after Takeoff
+    start. An entry whose login was on or before its own date does not compete."""
+    logged = [c for c in candidates if c[3]]
+    if not logged:
         return None
-    entry_date, _, entry_id, logged_in = min(candidates, key=lambda c: (c[0], c[1]))
-    return entry_id if logged_in and entry_date >= takeoff_start else None
+    entry_date, _, entry_id, _ = min(logged, key=lambda c: (c[0], c[1]))
+    return entry_id if entry_date >= takeoff_start else None
 
 
 def first_validated(candidates: list[tuple[str, str, bool]]) -> str | None:

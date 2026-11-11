@@ -6,7 +6,7 @@ import { Button, Card, cx, ErrorBox, Field, Input, KV, Loading, RagBadge, Select
 import { api, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
 import { type Answers, currentSlot, hasLoanType, previewStatus, questionApplies } from '../../services/classify'
-import { fmtRupees, fmtServer, isSunday, parseWhole, rupeesInWords } from '../../services/format'
+import { fmtRupees, fmtServer, isSunday, nextDateRange, parseWhole, rupeesInWords } from '../../services/format'
 import { useBranches, useMeta } from '../../services/meta'
 import type { EntryDetail } from '../../types'
 
@@ -120,11 +120,12 @@ export default function CallScreen() {
   const asked = converted && !a.needs_home_loan ? { ...a, needs_home_loan: 'Yes' } : a
   const askLead = group === 'lead' || asked.needs_home_loan === 'Yes'
   const preview = useMemo(() => (outcome === 'Connected' ? previewStatus(group, asked) : null), [outcome, group, asked])
-  const sundayCallback = outcome === 'Callback requested' && isSunday(nextDate)
+  // a Next date can be given on any call that did not connect; the latest one is the callback date (Takeoff master)
+  const sundayCallback = !!outcome && outcome !== 'Connected' && isSunday(nextDate)
   const sundayNext = outcome === 'Connected' && isSunday(a.next_date)
   const m = useMutation({
     mutationFn: async () => (await api.post(`/calls/entries/${id}/attempts`, {
-      slot, outcome, next_date: outcome === 'Callback requested' ? nextDate : (null as string | null),
+      slot, outcome, next_date: outcome && outcome !== 'Connected' && nextDate ? nextDate : (null as string | null),
       answers: outcome === 'Connected' ? Object.fromEntries(Object.entries(a).filter(([k, v]) => v && questionApplies(k, a.loan_need))) : undefined,
     })).data,
     onSuccess: (d) => {
@@ -137,7 +138,7 @@ export default function CallScreen() {
   const q = meta.questions
   const lim = meta.limits
   const lastAnswers = [...e.attempts].reverse().find((x) => x.outcome === 'Connected')?.answers
-  const today = new Date().toISOString().slice(0, 10)
+  const range = nextDateRange()
   return (
     <>
       <Link to={path('calls')} className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-brand-700"><ArrowLeft size={16} aria-hidden="true" />My calls</Link>
@@ -150,7 +151,7 @@ export default function CallScreen() {
               <Phone size={20} aria-hidden="true" />{e.phone.replace(/(\d{5})(\d{5})/, '$1 $2')}
             </a>
             <p className="mt-3 text-sm text-brand-200">{e.category_label}{e.cp_subtype_label && ` · ${e.cp_subtype_label}`} · {converted ? `Converted from DSA/CP: called as a lead, ${lim.tries_per_day_lead} tries a day, up to ${lim.max_unanswered_lead} unanswered`
-              : e.call_group === 'dsa_cp' ? `DSA/CP group: ${lim.tries_per_day_dsa} try, one day (plus a callback day if asked)`
+              : e.call_group === 'dsa_cp' ? `DSA/CP group: ${lim.tries_per_day_dsa} try, on one day only (a callback request closes it)`
                 : `Lead group: ${lim.tries_per_day_lead} tries a day, up to ${lim.max_unanswered_lead} unanswered`}</p>
             <div className="mt-4 flex flex-wrap gap-2 text-xs"><RagBadge value={e.rag} /><span className="rounded-full bg-white/10 px-2.5 py-0.5">{e.status ?? 'Not called yet'}</span><span className="rounded-full bg-white/10 px-2.5 py-0.5">{e.unanswered_count} unanswered (cycle {e.call_cycle})</span></div>
           </div>
@@ -178,7 +179,7 @@ export default function CallScreen() {
               <Field label="Time slot"><Select value={slot} onChange={(ev) => setSlot(ev.target.value)}>{meta.slots.map((s) => <option key={s}>{s}</option>)}</Select></Field>
               <Choice label="Outcome" options={meta.outcomes} value={outcome} onChange={(v) => setOutcome(v ?? '')} />
             </div>
-            {outcome === 'Callback requested' && <div className="mt-4 max-w-xs"><Field label="Call back on (working day)" error={sundayCallback ? 'A Sunday is not a working day: pick another date' : undefined}><Input type="date" min={today} value={nextDate} onChange={(ev) => setNextDate(ev.target.value)} /></Field></div>}
+            {outcome && outcome !== 'Connected' && <div className="mt-4 max-w-xs"><Field label={outcome === 'Callback requested' ? 'Call back on (working day)' : 'Next date (optional, working day)'} hint="From tomorrow, up to 30 working days ahead" error={sundayCallback ? 'A Sunday is not a working day: pick another date' : undefined}><Input type="date" min={range.min} max={range.max} value={nextDate} onChange={(ev) => setNextDate(ev.target.value)} /></Field></div>}
             {outcome === 'Connected' && (
               <div className="mt-5 space-y-4 border-t border-slate-100 pt-5">
                 {group === 'dsa_cp' && (
@@ -195,7 +196,7 @@ export default function CallScreen() {
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <Field label="Name as given"><Input value={a.name_given ?? ''} onChange={(ev) => setA({ ...a, name_given: ev.target.value })} /></Field>
-                      <Field label="Next date (working day)" error={sundayNext ? 'A Sunday is not a working day: pick another date' : undefined}><Input type="date" min={today} value={a.next_date ?? ''} onChange={(ev) => setA({ ...a, next_date: ev.target.value || undefined })} /></Field>
+                      <Field label="Next date (working day)" error={sundayNext ? 'A Sunday is not a working day: pick another date' : undefined}><Input type="date" min={range.min} max={range.max} value={a.next_date ?? ''} onChange={(ev) => setA({ ...a, next_date: ev.target.value || undefined })} /></Field>
                     </div>
                     <Field label="Remarks"><Textarea rows={2} value={a.remarks ?? ''} onChange={(ev) => setA({ ...a, remarks: ev.target.value })} /></Field>
                   </>

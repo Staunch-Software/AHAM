@@ -24,8 +24,8 @@ dash) in `rules.py`.
 | 12.1–12.3 | SO / branch and call-centre actions and how long they stay open | `engine.derive` | Open actions, Call-centre actions |
 | 12.4 | Branch answer codes, 14-day rule, green channel (head-office check), RBH answers where there is no BM, missed dates | `handoff.answer_lead`, `review_green_channel`, `api/v1/branch.py` | Leads to answer, Green channel |
 | 13.1 | Wrong SO: Entry ID kept, SO/branch/region replaced | `handoff.correct_so` | Entry page: Correct SO |
-| 13.2 | Wrong number within 15 days: called again with a fresh count of tries | `handoff.correct_number` | Entry page: Correct number |
-| 13.3 | Follow-up tracker; later date wins against a branch answer | `handoff.save_tracker`, `engine.derive` | Entry page: Follow-up tracker |
+| 13.2 | Wrong number while its action is open (15 days from the call): called again with a fresh count of tries | `handoff.correct_number` | Entry page: Correct number |
+| 13.3 | Follow-up tracker; against a branch answer only a later follow-up date wins (ties: the branch) | `handoff.save_tracker`, `engine.derive` | Entry page: Follow-up tracker |
 | 14 | Settings | `services/settings.py` (stored per company) | HR & Admin: Settings |
 
 Everything an entry "is" (status, RAG, actions, lead outcome, flags) is **derived** from its calls, branch answers,
@@ -67,7 +67,7 @@ Added with the feature-review fixes (2026-11-01, `docs/feature-review.md`), each
 - The RBH corrects a customer number where the branch has neither a BM nor an RTM (as it answers leads there).
 - A branch date that the 14-day rule gave to the call centre is not a branch's missed date.
 - The tracker's "Logged in" needs the TCS ID and "Rejected" needs the reason; "Return to branch – green channel"
-  returns the waiting R2/R3 exactly like the Green channel page.
+  returns the waiting R2/R3 exactly like the Green channel page (and, as the Takeoff master, can be given without one).
 - Settings apply from the day they are saved; a report for an earlier day (daily compliance) uses the settings of
   that day.
 - Adding or removing a holiday moves the count date of entries already made that day.
@@ -86,14 +86,14 @@ Added with the second review and the client's demo feedback (2026-11-09), each s
 - **A follow-up sent to the call centre** (branch date more than 14 days out, or the tracker) is done once the call
   centre has called on or after its date; the lead then goes back to the branch. If it runs out unworked, the lead
   keeps its branch action (a lead action never expires).
-- **PRIORITY** (branch code 3, "Reopen for calling", immediate call-back) and a **corrected number** go on today's
+- **PRIORITY** (branch code 3, immediate call-back), a reopen due today and a **corrected number** go on today's
   list at once, to the caller who first handled the entry (or the branch's caller of the day).
 - A lead's planned 2 tries take it off the list; up to 3 can be recorded, so it stays reachable under "Called today"
   for a third try that day. A corrected number's tries start afresh (today's tries on the old number do not count).
 - The "repeat entry by same SO" check compares every earlier entry with that number, including entries never
   selected (dated before the first call date, or Existing Customer / Applicant).
-- A Sankalp success tie on the same date goes to the lower Entry ID (11.3 as written), even if that entry was a
-  duplicate that was never called.
+- A Sankalp success tie on the same date goes to the lower Entry ID (11.3 as written). Only logged-in entries
+  compete (Takeoff master).
 - The call outcome "RNR" is written "Rang, no answer"; the RAG "RNR" is shown as "No answer".
 
 Aligned with Aham's Takeoff master workbook (Excel, Oct 2026) on 2026-11-11, where it was silent in the document or
@@ -110,12 +110,35 @@ differed from it:
 - "Spoken to within 30 days" means fewer than 30 days before the run date.
 - A DSA/CP callback request closes it (see above).
 - A call-centre follow-up goes to the tracker's caller, else the caller who created the lead ID, else the first caller.
-- Reopened for calling (branch code 3, tracker "Reopen for calling", immediate call-back): the entry shows "In retry –
-  PRIORITY" and is called first every day until a call gives a status after the reopen (or the tries run out).
+  Retries and PRIORITY go to the first caller only.
+- Reopened for calling (branch code 3, or the tracker's "Reopen for calling"): the entry is "In retry" from the reopen
+  date (the branch's answer, or the tracker's follow-up date, else the day it was saved), with that date as its
+  callback, until a call on or after it gives a status (or the tries run out). Branch code 3 and a reopen with the
+  master owner's immediate call-back are PRIORITY; a tracker reopen alone is a normal retry. An immediate call-back on
+  its own puts only a not-yet-called entry first. It goes on today's list only once its date has come.
 - "Validated on" is the date of the latest call that gave a status.
 - Take case forward and call-centre follow-ups do not expire; callbacks do (14 days).
 - A login validates an entry ("Customer validated") only when it is the Sankalp success for that TCS ID (and not LAP,
   not a repeat). An entry validated on a call stays validated.
+
+Second pass against the Takeoff master (2026-11-11):
+- Sankalp success: the earliest **logged-in** entry per TCS ID (an earlier entry that did not log in no longer blocks it).
+- A TCS ID typed on the tracker overrides the login register.
+- "Login on or before entry date" closes the entry like Logged in and Rejected: no actions, RAG NA, no retries or
+  PRIORITY. A register row without a login date counts as one.
+- The login register matches a contact on its last 10 digits when the whole number is not valid (RIGHT(number, 10)).
+- Tracker vs branch answer: the tracker applies only when its follow-up date is after the branch's response date; a
+  tie, or a tracker row without a follow-up date, leaves the branch answer in force. The day a tracker row was saved
+  is the company's local (IST) date.
+- A lead action given on the tracker makes the entry a lead whatever the tracker's owner.
+- "Correct customer number" is open for 15 days from the call that found the wrong number; the BM / RTM can correct
+  it while that action is open.
+- A Next date can be given on any call that does not connect; the callback date is the latest one. No callback action
+  while the tracker gives the entry to an owner (branch, call centre, done).
+- A call's Next date runs from tomorrow up to 30 working days ahead (Sundays and holidays not counted), never a Sunday.
+- The lead card's handling branch applies once the lead has a lead ID.
+- Call-centre report: "First try on time" is counted over validated entries. The dashboard shows the Sankalp lead
+  conversion by region (validated leads, logged in, rejected, open, login %).
 Kept as the document says (the Excel differs): a LAP login never validates (11.3); a lost lead is NA, not Red (9);
 the repeat check uses the SO now on the entry, not the Emp ID in the Entry ID.
 

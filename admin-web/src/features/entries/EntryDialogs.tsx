@@ -17,7 +17,7 @@ export function CorrectNumberDialog({ entry, onClose }: { entry: EntryDetail; on
   const m = useMutation({ mutationFn: () => api.post(`/entries/${entry.id}/correct-number`, { phone }), onSuccess: done })
   return (
     <Dialog title="Correct the customer number" onClose={onClose}>
-      <p className="mb-4 text-sm text-slate-600">The Entry ID stays. The call centre calls the new number automatically, with a fresh count of tries. Allowed until {entry.so_action_until ?? '15 days after the entry'}.</p>
+      <p className="mb-4 text-sm text-slate-600">The Entry ID stays. The call centre calls the new number automatically, with a fresh count of tries. Allowed while the action is open: until {entry.so_action_until ?? '15 days after the call that found the wrong number'}.</p>
       <ErrorBox error={m.error ? errorMessage(m.error) : null} />
       <Field label={`Correct mobile number (now ${entry.phone})`}><Input inputMode="tel" autoFocus value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="10 digits, starting 6-9" /></Field>
       <div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={!phone.trim() || m.isPending} onClick={() => m.mutate()}>Save number</Button></div>
@@ -72,7 +72,7 @@ export function TrackerDialog({ entry, onClose }: { entry: EntryDetail; onClose:
   })
   return (
     <Dialog title="Follow-up tracker" onClose={onClose} wide>
-      <p className="mb-4 text-sm text-slate-600">Where this row and a branch answer disagree, the later date applies. Owner decides whose list shows the entry: <strong>Branch</strong> gives the branch the action type on the follow-up date; <strong>Call centre</strong> puts a follow-up on the call centre's list; <strong>Done</strong> closes it. A TCS ID entered here counts as a login. The RAG override wins over the computed RAG.</p>
+      <p className="mb-4 text-sm text-slate-600">Against a branch answer this row applies only when its follow-up date is later (a tie, or no follow-up date, leaves the branch answer). Owner decides whose list shows the entry: <strong>Branch</strong> gives the branch the action type on the follow-up date; <strong>Call centre</strong> puts a follow-up on the call centre's list; <strong>Done</strong> closes it. A TCS ID entered here counts as a login, over the login register. Reopen for calling: called again from the follow-up date (today if blank); with immediate call-back it is PRIORITY. The RAG override wins over the computed RAG.</p>
       <ErrorBox error={m.error ? errorMessage(m.error) : null} />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Owner"><Select value={v.owner} onChange={set('owner')}><option value="">—</option>{meta?.tracker.owners.map((o) => <option key={o} value={o}>{o.replace('_', ' ')}</option>)}</Select></Field>
@@ -84,7 +84,7 @@ export function TrackerDialog({ entry, onClose }: { entry: EntryDetail; onClose:
         <Field label="Reject reason" error={needReason ? 'Give the reject reason' : undefined}><Select value={v.reject_reason} onChange={set('reject_reason')}><option value="">—</option>{meta?.tracker.reject_reasons?.map((o) => <option key={o}>{o}</option>)}</Select></Field>
         <Field label="RAG override"><Select value={v.rag_override} onChange={set('rag_override')}><option value="">None (computed)</option>{['GREEN', 'AMBER', 'RED', 'RNR', 'NA'].map((r) => <option key={r} value={r}>{RAG_LABEL[r]}</option>)}</Select></Field>
       </div>
-      {v.outcome === 'Return to branch – green channel' && <p className="mt-3 rounded-lg bg-gold-50 px-3 py-2 text-xs text-slate-700">Returns the branch's green-channel R2/R3 rejection: the lead goes back to the branch to log in (the same as on the Green channel page).</p>}
+      {v.outcome === 'Return to branch – green channel' && <p className="mt-3 rounded-lg bg-gold-50 px-3 py-2 text-xs text-slate-700">Returns the branch's green-channel R2/R3 rejection, if one is waiting (the same as on the Green channel page): the lead goes back to the branch to log in.</p>}
       <div className="mt-4"><Toggle label="Immediate call-back (shown first, as PRIORITY)" checked={v.immediate_callback} onChange={(c) => setV({ ...v, immediate_callback: c })} /></div>
       <div className="mt-4"><Field label="Notes"><Textarea rows={3} value={v.notes} onChange={set('notes')} /></Field></div>
       <div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={m.isPending || needTcs || needReason} onClick={() => m.mutate()}>Save</Button></div>

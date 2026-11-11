@@ -14,6 +14,7 @@ interface Dash {
   by_status: Record<string, number>
   trend: { day: string; entries: number }[]
   branches: { branch_id: string; branch: string; region: string | null; entries: number; lead_prospect: number; validated: number; logged_in: number; red: number; amber: number; green: number; sos: number }[]
+  conversion: { region: string | null; validated: number; logged_in: number; rejected: number; open: number }[]
 }
 
 export type Period = 'today' | 'week' | 'last_week' | 'month'
@@ -120,6 +121,21 @@ export default function Dashboard() {
               </ul>
             </Card>
           </div>
+
+          <Card title="Sankalp lead conversion" subtitle="Validated leads by region: logged in (the Sankalp success), rejected, or still open" className="mt-6" flush>
+            {data.conversion.length === 0 ? <EmptyState icon={<BadgeCheck size={20} />} title="No validated leads in this period." /> : (
+              <Table head={['Region', 'Validated leads', 'Logged in', 'Rejected', 'Open', 'Login %']} exportName="Lead conversion">
+                {data.conversion.map((c) => (
+                  <tr key={c.region ?? '—'}>
+                    <Td className="font-medium text-slate-900">{c.region ?? '—'}</Td><Td className="tabular">{c.validated}</Td>
+                    <Td className="tabular text-emerald-700">{c.logged_in}</Td><Td className="tabular text-roof-700">{c.rejected}</Td>
+                    <Td className="tabular">{c.open}</Td>
+                    <Td className="tabular font-semibold">{c.validated ? `${((c.logged_in / c.validated) * 100).toFixed(1)}%` : '—'}</Td>
+                  </tr>
+                ))}
+              </Table>
+            )}
+          </Card>
 
           <Card title="Branches" className="mt-6" flush>
             {data.branches.length === 0 ? <EmptyState icon={<ListChecks size={20} />} title="No entries in this period." /> : (

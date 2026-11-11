@@ -7,7 +7,7 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import case, func, literal_column, select
+from sqlalchemy import case, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_perm
@@ -78,6 +78,16 @@ async def dashboard(period: str = "today", date_from: date | None = None, date_t
                func.count().filter(RAG_EXPR == "GREEN"), func.count(func.distinct(SankalpEntry.so_user_id)))
         .join(Branch, Branch.id == SankalpEntry.branch_id).outerjoin(Region, Region.id == Branch.region_id)
         .where(*in_period).group_by(Branch.id, Branch.name, Region.name).order_by(func.count().desc()))).all()
+    # Sankalp lead conversion by region (the Takeoff master): validated lead-type entries, and how many of them are
+    # the Sankalp success (logged in), were rejected, or are still open
+    lead_type = or_(SankalpEntry.call_group == "lead", SankalpEntry.status == R.VALIDATED_CONVERTED,
+                    SankalpEntry.lead_outcome.is_not(None))
+    conversion = (await s.execute(
+        select(Region.name, func.count(), func.count().filter(SankalpEntry.sankalp_success),
+               func.count().filter(SankalpEntry.lead_outcome == R.OUTCOME_REJECTED))
+        .join(Branch, Branch.id == SankalpEntry.branch_id).outerjoin(Region, Region.id == Branch.region_id)
+        .where(*in_period, SankalpEntry.customer_validated, lead_type)
+        .group_by(Region.name).order_by(Region.name))).all()
     keys = ["entries", "lead_prospect", "dsa_cp", "validated", "logged_in", "sankalp_success", "awaiting_call",
             "open_so_actions", "active_sos"]
     return {
@@ -87,6 +97,8 @@ async def dashboard(period: str = "today", date_from: date | None = None, date_t
         "branches": [{"branch_id": str(b), "branch": n, "region": rn, "entries": t, "lead_prospect": lp, "validated": v,
                       "logged_in": li, "red": rd, "amber": am, "green": gr, "sos": so}
                      for b, n, rn, t, lp, v, li, rd, am, gr, so in branches],
+        "conversion": [{"region": rn, "validated": n, "logged_in": li, "rejected": rj, "open": n - li - rj}
+                       for rn, n, li, rj in conversion],
     }
 
 
@@ -249,14 +261,16 @@ async def callcentre_report(period: str = "today", date_from: date | None = None
         .join(CallAttempt, CallAttempt.caller_id == User.id)
         .where(User.company_id == user.company_id, CallAttempt.call_date >= first, CallAttempt.call_date <= last)
         .group_by(User.id, User.full_name).order_by(User.full_name))).all()
-    # first attempt within the target (setting: 1 day) of the entry date
+    # first try on time, as the Takeoff master: of the validated entries, those first called within the target
+    # (setting: 1 day) of the entry date
     cfg = await load_settings(s, user.company_id)
     firsts = (select(CallAttempt.entry_id, func.min(CallAttempt.call_date).label("first")).group_by(CallAttempt.entry_id)
               .subquery())
     tat = (await s.execute(select(
         func.count(), func.count().filter(firsts.c.first - SankalpEntry.entry_date <= cfg.first_attempt_target_days))
         .select_from(firsts).join(SankalpEntry, SankalpEntry.id == firsts.c.entry_id)
-        .where(SankalpEntry.company_id == user.company_id, firsts.c.first >= first, firsts.c.first <= last))).one()
+        .where(SankalpEntry.company_id == user.company_id, SankalpEntry.customer_validated,
+               firsts.c.first >= first, firsts.c.first <= last))).one()
     return {"period": {"from": first, "to": last},
             "first_attempts": tat[0], "first_attempt_on_time": tat[1], "target_days": cfg.first_attempt_target_days,
             "callers": [{"caller_id": str(i), "name": n, "attempts": a, "connected": c, "unanswered": u, "validated": v,

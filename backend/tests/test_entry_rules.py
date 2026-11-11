@@ -60,3 +60,19 @@ def test_count_date_moves_sundays_and_holidays():
     assert count_date(sun, {date(2026, 10, 19)}) == date(2026, 10, 20)  # Sunday then a holiday Monday
     assert count_date(date(2026, 10, 2), {date(2026, 10, 2)}) == date(2026, 10, 3)
     assert next_non_sunday(sun) == sun + timedelta(days=1) and next_non_sunday(date(2026, 10, 17)) == date(2026, 10, 17)
+
+
+def test_next_date_runs_from_tomorrow_up_to_30_working_days():
+    from app.services.calendar import next_date_problem
+    today = date(2026, 11, 11)  # a Wednesday
+    assert next_date_problem(today, today, set())  # not today
+    assert next_date_problem(date(2026, 11, 15), today, set())  # a Sunday
+    assert next_date_problem(date(2026, 11, 12), today, set()) is None
+    assert next_date_problem(date(2026, 12, 16), today, set()) is None  # the 30th working day
+    assert next_date_problem(date(2026, 12, 17), today, set())
+    assert next_date_problem(date(2026, 12, 17), today, {date(2026, 11, 20)}) is None  # a holiday is not counted
+
+
+def test_register_contacts_match_on_the_last_10_digits():
+    assert split_contacts("0091 98765 43210") == ["9876543210"]  # RIGHT(number, 10), as the Takeoff master
+    assert split_contacts("9876543210 9123456789") == ["9876543210", "9123456789"]

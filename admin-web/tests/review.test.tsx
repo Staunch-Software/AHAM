@@ -64,7 +64,7 @@ test('14.1 a Sunday callback date is refused at once', async () => {
   installApiMock('caller', { '/entries/e1': entry() })
   renderApp('/callcentre/calls/e1')
   await userEvent.click(await screen.findByRole('button', { name: 'Callback requested' }))
-  await userEvent.type(screen.getByLabelText('Call back on (working day)'), '2026-10-25')
+  await userEvent.type(screen.getByLabelText(/^Call back on \(working day\)/), '2026-10-25')
   expect(screen.getByText('A Sunday is not a working day: pick another date')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Save try' })).toBeDisabled()
 })
@@ -133,7 +133,7 @@ test('3.1 HR & Admin has the employee roster for the monitor', async () => {
 
 test('dashboard offers last week (on a Monday, this week is still empty)', async () => {
   const seen: string[] = []
-  const dash = { period: { from: '2026-10-26', to: '2026-11-01' }, totals: {}, rag: {}, by_category: {}, by_status: {}, trend: [], branches: [] }
+  const dash = { period: { from: '2026-10-26', to: '2026-11-01' }, totals: {}, rag: {}, by_category: {}, by_status: {}, trend: [], branches: [], conversion: [] }
   installApiMock('admin', { '/dashboard': (cfg: { params: { period: string } }) => { seen.push(cfg.params.period); return dash } })
   renderApp('/admin/dashboard')
   await userEvent.click(await screen.findByRole('button', { name: 'Last week' }))

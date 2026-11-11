@@ -149,8 +149,9 @@ def test_correct_number_action_has_a_15_day_window():
     st = state(att(R.WRONG_PERSON))
     d = E.derive(st, CFG, D)
     assert d.status == R.AMBER_WRONG_PERSON and d.so_action == R.ACT_CORRECT_NUMBER and d.rag == "AMBER"
-    assert d.so_action_until == st.entry_date + timedelta(days=15)
-    expired = E.derive(st, CFG, st.entry_date + timedelta(days=16))
+    call = st.attempts[-1].call_date
+    assert d.so_action_until == call + timedelta(days=15)  # from the call that found it (Takeoff master)
+    expired = E.derive(st, CFG, call + timedelta(days=16))
     assert expired.so_action is None and expired.rag == "AMBER"  # status still Amber
     nc = E.derive(state(sel=R.NC_NO_NUMBER), CFG, D)
     assert nc.so_action == R.ACT_CORRECT_NUMBER and nc.rag == "AMBER"
@@ -221,7 +222,7 @@ def test_login_outcomes_and_validation():
     assert after.lead_outcome == R.LOGGED_IN and after.customer_validated and after.rag == "NA"
     assert after.validated_on == D  # the latest call that gave a status (Takeoff master), not the login date
     before = E.derive(state(base, login=E.Login("T1", D - timedelta(days=1), "Home Loan", "register")), CFG, D)
-    assert before.lead_outcome == R.LOGIN_BEFORE_ENTRY and not before.customer_validated
+    assert before.lead_outcome == R.LOGIN_BEFORE_ENTRY and not before.customer_validated and before.rag == "NA"
     lap = E.derive(state(base, login=E.Login("T1", D + timedelta(days=5), "LAP", "register")), CFG, D)
     assert lap.lead_outcome == R.LOGGED_IN and not lap.customer_validated  # LAP login: success, not validation
     manual = E.derive(state(base, tracker=E.Tracker(None, None, None, "T9", None, False, D)), CFG, D)
@@ -236,7 +237,9 @@ def test_login_outcomes_and_validation():
 def test_success_and_first_validation():
     t = date(2026, 9, 22)
     assert E.sankalp_success_winner([(D, "B-1", "b", True), (D, "A-1", "a", True)], t) == "a"  # tie: lower Entry ID
-    assert E.sankalp_success_winner([(D, "A-1", "a", False), (D + timedelta(days=1), "B-1", "b", True)], t) is None
+    # only logged-in entries compete (Takeoff master): an earlier entry that did not log in does not block a later one
+    assert E.sankalp_success_winner([(D, "A-1", "a", False), (D + timedelta(days=1), "B-1", "b", True)], t) == "b"
+    assert E.sankalp_success_winner([(D, "A-1", "a", False)], t) is None
     assert E.sankalp_success_winner([(date(2026, 9, 1), "A", "a", True)], t) is None  # before Takeoff start
     assert E.first_validated([("2", "b", True), ("1", "a", False), ("3", "c", True)]) == "b"
     assert E.first_validated([("1", "a", False)]) is None
@@ -249,3 +252,72 @@ def test_attempt_limits():
     assert E.attempt_allowed(call_group="dsa_cp", attempts_today=0, days_called=set(), **kw) is None
     assert E.attempt_allowed(call_group="dsa_cp", attempts_today=1, days_called={D}, **kw)
     assert E.attempt_allowed(call_group="dsa_cp", attempts_today=0, days_called={D - timedelta(days=1)}, **kw)
+
+
+# ---------------------------------------------------------------- second alignment with the Takeoff master
+UNANSWERED = R.RNR
+
+
+def test_tracker_versus_branch_answer_ties_go_to_the_branch():
+    base = att(answers=OK)
+    same_day = E.Tracker("call_centre", D, None, None, None, False, D)
+    d = E.derive(state(base, branch_answer=E.BranchAns("A1", D + timedelta(days=2), D), tracker=same_day), CFG, D)
+    assert d.cc_action is None and d.so_action_date == D + timedelta(days=2)  # the branch's answer applies
+    # a tracker row with no follow-up date never overrides a branch answer, however recently it was saved
+    undated = E.Tracker(None, None, "Rejected", None, None, False, D + timedelta(days=1))
+    d = E.derive(state(base, branch_answer=E.BranchAns("A1", D + timedelta(days=2), D), tracker=undated), CFG, D)
+    assert d.lead_outcome is None
+
+
+def test_reopen_runs_from_its_date_until_a_call_gives_a_status():
+    called = att(answers=OK, day=D - timedelta(days=3))
+    later = D + timedelta(days=2)
+    reopen = E.Tracker("call_centre", later, R.TRACKER_REOPEN, None, None, False, D)
+    d = E.derive(state(called, tracker=reopen), CFG, D)
+    assert d.status == R.IN_RETRY and d.callback_date == later and not d.priority  # a normal retry from its date
+    d = E.derive(state(called, att(UNANSWERED, day=later), tracker=reopen), CFG, later)
+    assert d.status == R.IN_RETRY  # an unanswered try gives no status: still reopened
+    d = E.derive(state(called, att(answers=OK, day=later), tracker=reopen), CFG, later)
+    assert d.status == R.VALIDATED  # reached on the reopen date
+    # with the master owner's immediate call-back the reopen is PRIORITY, from the day it was saved
+    hot = E.Tracker("call_centre", None, R.TRACKER_REOPEN, None, None, True, D)
+    d = E.derive(state(called, tracker=hot), CFG, D)
+    assert d.priority and d.priority_reason == "Master owner: immediate call-back" and d.callback_date == D
+    # an immediate call-back on its own only puts a not-yet-called entry first
+    alone = E.Tracker("call_centre", None, None, None, None, True, D)
+    assert E.derive(state(tracker=alone), CFG, D).priority
+    assert not E.derive(state(called, tracker=alone), CFG, D).priority
+    # branch code 3: PRIORITY, with the branch's answer date as the callback
+    d = E.derive(state(called, branch_answer=E.BranchAns("3", None, D)), CFG, D)
+    assert d.priority and d.status == R.IN_RETRY and d.callback_date == D
+
+
+def test_login_rules_close_the_entry():
+    base = att(answers=OK, day=D - timedelta(days=1))
+    # a register row without a login date counts as a login on or before the entry date: closed, even for code 3
+    nodate = E.derive(state(base, login=E.Login("T1", None, "Home Loan", "register"),
+                            branch_answer=E.BranchAns("3", None, D)), CFG, D)
+    assert nodate.lead_outcome == R.LOGIN_BEFORE_ENTRY and nodate.rag == "NA"
+    assert nodate.so_action is None and nodate.cc_action is None and not nodate.priority
+    # a TCS ID typed on the tracker overrides the register
+    over = E.derive(state(base, login=E.Login("T1", D - timedelta(days=3), "Home Loan", "register"),
+                          tracker=E.Tracker(None, None, None, "T9", None, False, D)), CFG, D)
+    assert over.lead_outcome == R.LOGGED_IN
+
+
+def test_callback_is_the_latest_next_date_on_calls_that_did_not_connect():
+    nxt = D + timedelta(days=3)
+    d = E.derive(state(att(R.CALLBACK, nxt=D + timedelta(days=1)), att(UNANSWERED, nxt=nxt)), CFG, D)
+    assert d.status == R.IN_RETRY and d.callback_date == nxt and (d.cc_action, d.cc_action_date) == (R.CC_CALLBACK, nxt)
+    # no callback action while the tracker gives the entry to the branch
+    to_branch = E.Tracker("branch", D + timedelta(days=5), None, None, None, False, D)
+    d = E.derive(state(att(UNANSWERED, nxt=nxt), tracker=to_branch), CFG, D)
+    assert d.cc_action is None and d.so_action == R.ACT_BRANCH_FOLLOWUP
+
+
+def test_a_lead_action_on_the_tracker_makes_a_lead_whatever_its_owner():
+    dsa = att(answers={"dsa_rag": "Green"}, group="dsa_cp")
+    tr = E.Tracker("call_centre", D + timedelta(days=1), None, None, None, False, D, R.ACT_VISIT)
+    d = E.derive(state(dsa, group="dsa_cp", tracker=tr, login=E.Login("T1", D + timedelta(days=5), None, "register")),
+                 CFG, D)
+    assert d.lead_outcome == R.LOGGED_IN

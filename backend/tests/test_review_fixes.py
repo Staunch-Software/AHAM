@@ -77,7 +77,8 @@ def test_24_1_an_action_whose_window_ran_out_is_kept_as_expired():
     open_ = E.derive(st, E.Settings(), D(20))
     assert open_.so_action == R.ACT_CORRECT_NUMBER and open_.expired_action is None
     late = E.derive(st, E.Settings(), D(30))
-    assert late.so_action is None and (late.expired_action, late.expired_on) == (R.ACT_CORRECT_NUMBER, D(25))
+    # 15 days from the call that found the wrong number (Takeoff master)
+    assert late.so_action is None and (late.expired_action, late.expired_on) == (R.ACT_CORRECT_NUMBER, D(27))
 
 
 def test_15_1_converted_means_a_connected_yes_to_needs_home_loan():
@@ -157,6 +158,12 @@ async def test_16_2_handling_branch_works_the_lead_and_16_3_card_changes_are_in_
     r = await client.put(url, headers=await f("caller1"),
                          json={"handling_branch_id": str(tenant_a["b3"]), "loan_requirement": 2_000_000})
     assert r.status_code == 200, r.text
+    # as the Takeoff master, the handling branch applies once the lead has a lead ID
+    assert [i["entry_code"] for i in (await client.get("/api/v1/branch/leads", headers=await f("bm1"))).json()["items"]] \
+        == [e["entry_code"]]
+    r = await client.put(url, headers=await f("caller1"), json={"handling_branch_id": str(tenant_a["b3"]),
+                                                                "loan_requirement": 2_000_000, "lead_id": "TCS-16"})
+    assert r.status_code == 200, r.text
     leads3 = (await client.get("/api/v1/branch/leads", headers=await f("bm3"))).json()["items"]
     assert [(i["entry_code"], i["handling_branch_name"]) for i in leads3] == [(e["entry_code"], "Branch Three")]
     assert (await client.get("/api/v1/branch/leads", headers=await f("bm1"))).json()["items"] == []
@@ -169,7 +176,7 @@ async def test_16_2_handling_branch_works_the_lead_and_16_3_card_changes_are_in_
     assert [m["missed"] for m in (await client.get("/api/v1/branch/missed-dates", headers=await f("bm3"))).json()] == [1]
     assert (await client.get("/api/v1/branch/missed-dates", headers=await f("bm1"))).json() == []
     await client.put(url, headers=await f("caller1"),
-                     json={"handling_branch_id": str(tenant_a["b3"]), "loan_requirement": 2_500_000})
+                     json={"handling_branch_id": str(tenant_a["b3"]), "loan_requirement": 2_500_000, "lead_id": "TCS-16"})
     cards = [h for h in (await f.get(e["id"]))["history"] if h["kind"] == "lead_card"]
     assert cards[-1]["detail"]["changes"] == {"loan_requirement": [2_000_000, 2_500_000]}
     assert cards[0]["detail"]["changes"]["handling_branch"] == [None, "Branch Three"]  # by name, not the id
@@ -181,8 +188,10 @@ async def test_25_1_and_25_2_tracker_outcomes_need_what_makes_them_work(client, 
     url = f"/api/v1/calls/entries/{e['id']}/tracker"
     assert (await client.put(url, headers=await f("master"), json={"outcome": "Logged in"})).status_code == 422
     assert (await client.put(url, headers=await f("master"), json={"outcome": "Rejected"})).status_code == 422
+    # with no R2/R3 waiting, the master owner can still send the lead back to the branch to log in (Takeoff master)
     r = await client.put(url, headers=await f("master"), json={"outcome": R.TRACKER_RETURN_GREEN})
-    assert r.status_code == 409 and r.json()["detail"]["code"] == "no_green_channel_hold"
+    assert r.status_code == 200, r.text
+    assert (await f.get(e["id"]))["so_action"] == R.ACT_GREEN_LOGIN
     r = await client.put(url, headers=await f("master"), json={"outcome": "Logged in", "tcs_id": "TCS-77"})
     assert r.status_code == 200 and r.json()["lead_outcome"] == R.LOGGED_IN
 
@@ -244,7 +253,7 @@ async def test_24_1_expired_actions_list_and_24_2_missed_dates(client, tenant_a,
     expired = (await client.get("/api/v1/branch/actions?expired=true", headers=await f("bm1"))).json()
     rows = {i["entry_code"]: i for i in expired["items"]}
     assert rows[wrong["entry_code"]]["expired_action"] == R.ACT_CORRECT_NUMBER
-    assert rows[wrong["entry_code"]]["expired_on"] == "2026-11-04"
+    assert rows[wrong["entry_code"]]["expired_on"] == "2026-11-05"  # 15 days from the call (Takeoff master)
     open_ = (await client.get("/api/v1/branch/actions", headers=await f("bm1"))).json()
     assert {"items", "total", "page", "page_size"} <= set(open_) and wrong["entry_code"] not in {
         i["entry_code"] for i in open_["items"]}
@@ -363,3 +372,36 @@ async def test_changing_a_branchs_caller_after_the_run_moves_its_uncalled_new_en
                       json={"from_caller_id": str(tenant_a["caller2_id"]), "to_caller_id": str(tenant_a["caller1_id"])})
     r = await client.put(url, headers=await f("master"), json=body("caller2"))
     assert r.json()["moved"] == 0 and await f.list("caller2") == {}
+
+
+# ---------------------------------------------------------------- second alignment with the Takeoff master
+async def test_takeoff_next_date_on_an_unanswered_try_and_its_range(client, tenant_a, clock):
+    f = Flow(client, tenant_a)
+    e = await f.entry("so1", phone="9000000120")
+    await f.callers(clock.day, {"b1": "caller1"})
+    await f.run(clock.day)
+    url = f"/api/v1/calls/entries/{e['id']}/attempts"
+    for bad in (str(clock.day), "2026-12-31"):  # from tomorrow, up to 30 working days ahead
+        r = await client.post(url, headers=await f("caller1"), json={"slot": "10-11", "outcome": R.RNR, "next_date": bad})
+        assert r.status_code == 422 and r.json()["detail"]["code"] == "next_date", r.text
+    # a Next date on an unanswered try is the callback date, and the entry leaves today's list
+    await f.call("caller1", e["id"], R.RNR, next_date="2026-10-24")
+    d = await f.get(e["id"])
+    assert (d["status"], d["callback_date"], d["cc_action"]) == (R.IN_RETRY, "2026-10-24", R.CC_CALLBACK)
+    assert e["entry_code"] not in await f.list("caller1")
+
+
+async def test_takeoff_retries_go_to_the_first_caller(client, tenant_a, clock):
+    f = Flow(client, tenant_a)
+    e = await f.entry("so1", phone="9000000121")
+    await f.callers(clock.day, {"b1": "caller1"})
+    await f.run(clock.day)
+    await f.call("caller1", e["id"], R.RNR)
+    await f.call("caller1", e["id"], R.RNR, slot="03-04")
+    r = await client.put(f"/api/v1/calls/entries/{e['id']}/tracker", headers=await f("master"),
+                         json={"caller_id": str(tenant_a["caller2_id"])})
+    assert r.status_code == 200, r.text
+    clock.day = D(22)
+    await f.callers(clock.day, {"b1": "caller2"})
+    await f.run(clock.day)
+    assert (await f.list("caller1"))[e["entry_code"]]["kind"] == "retry"  # not the tracker's caller

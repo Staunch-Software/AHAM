@@ -255,10 +255,12 @@ async def test_number_and_so_corrections(client, tenant_a, clock):
     assert (await f.list("caller1"))[e["entry_code"]]["kind"] == "retry"
     assert (await f.list("caller2"))[late["entry_code"]]["kind"] == "fresh"
 
-    # the correction window is 15 days from the entry
+    # the correction is open for 15 days from the call that found the wrong number (Takeoff master)
     await f.call("caller2", late["id"], R.INVALID_NUMBER)
+    clock.day = date(2026, 11, 7)  # 16 days after that call
     r = await client.post(f"/api/v1/entries/{late['id']}/correct-number", headers=await f("bm1"), json={"phone": "9400000007"})
-    assert r.status_code == 409 and r.json()["detail"]["code"] == "window_closed"
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "no_correction_open"
+    clock.day = date(2026, 10, 22)
 
     # wrong SO: the RTM of the cluster corrects it; the BM of a clustered branch may not; the Entry ID stays
     url = f"/api/v1/entries/{e['id']}/correct-so"

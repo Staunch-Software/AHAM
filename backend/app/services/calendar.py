@@ -17,6 +17,22 @@ def is_working_day(d: date, holidays: set[date]) -> bool:
     return d.weekday() != 6 and d not in holidays  # 6 = Sunday
 
 
+def next_date_problem(d: date, today: date, holidays: set[date], max_working_days: int = 30) -> str | None:
+    """A call's Next date (the Takeoff call sheet): from tomorrow, up to 30 working days ahead, never a Sunday."""
+    if d <= today:
+        return "The next date must be after today"
+    if d.weekday() == 6:
+        return "The next date must be a working day (not a Sunday)"
+    last, n = today, 0
+    while n < max_working_days:
+        last += timedelta(days=1)
+        if is_working_day(last, holidays):
+            n += 1
+    if d > last:
+        return f"The next date can be at most {max_working_days} working days ahead (by {last:%d %b %Y})"
+    return None
+
+
 def count_date(d: date, holidays: set[date]) -> date:
     """The day an entry counts on: its own date, or the next working day if made on a Sunday or a holiday."""
     while not is_working_day(d, holidays):
