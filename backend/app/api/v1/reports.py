@@ -78,16 +78,20 @@ async def dashboard(period: str = "today", date_from: date | None = None, date_t
                func.count().filter(RAG_EXPR == "GREEN"), func.count(func.distinct(SankalpEntry.so_user_id)))
         .join(Branch, Branch.id == SankalpEntry.branch_id).outerjoin(Region, Region.id == Branch.region_id)
         .where(*in_period).group_by(Branch.id, Branch.name, Region.name).order_by(func.count().desc()))).all()
-    # Sankalp lead conversion by region (the Takeoff master): validated lead-type entries, and how many of them are
-    # the Sankalp success (logged in), were rejected, or are still open
+    # Sankalp lead conversion by region, as the Takeoff master: every entry since Takeoff start in the user's scope
+    # (not the period picked, since a lead logs in weeks after it was entered). Validated lead-type entries, and how
+    # many of them are the Sankalp success (logged in), were rejected, or are still open.
+    takeoff_start = (await load_settings(s, user.company_id)).takeoff_start
     lead_type = or_(SankalpEntry.call_group == "lead", SankalpEntry.status == R.VALIDATED_CONVERTED,
                     SankalpEntry.lead_outcome.is_not(None))
     conversion = (await s.execute(
         select(Region.name, func.count(), func.count().filter(SankalpEntry.sankalp_success),
                func.count().filter(SankalpEntry.lead_outcome == R.OUTCOME_REJECTED))
         .join(Branch, Branch.id == SankalpEntry.branch_id).outerjoin(Region, Region.id == Branch.region_id)
-        .where(*in_period, SankalpEntry.customer_validated, lead_type)
+        .where(scope, SankalpEntry.entry_date >= takeoff_start, SankalpEntry.customer_validated, lead_type)
         .group_by(Region.name).order_by(Region.name))).all()
+    conv_rows = [{"region": rn, "validated": n, "logged_in": li, "rejected": rj, "open": n - li - rj}
+                 for rn, n, li, rj in conversion]
     keys = ["entries", "lead_prospect", "dsa_cp", "validated", "logged_in", "sankalp_success", "awaiting_call",
             "open_so_actions", "active_sos"]
     return {
@@ -97,8 +101,8 @@ async def dashboard(period: str = "today", date_from: date | None = None, date_t
         "branches": [{"branch_id": str(b), "branch": n, "region": rn, "entries": t, "lead_prospect": lp, "validated": v,
                       "logged_in": li, "red": rd, "amber": am, "green": gr, "sos": so}
                      for b, n, rn, t, lp, v, li, rd, am, gr, so in branches],
-        "conversion": [{"region": rn, "validated": n, "logged_in": li, "rejected": rj, "open": n - li - rj}
-                       for rn, n, li, rj in conversion],
+        "conversion": {"since": takeoff_start, "regions": conv_rows,
+                       "total": {k: sum(r[k] for r in conv_rows) for k in ("validated", "logged_in", "rejected", "open")}},
     }
 
 

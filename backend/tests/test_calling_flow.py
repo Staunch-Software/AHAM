@@ -141,6 +141,15 @@ async def test_entry_to_login_end_to_end(client, tenant_a, clock):
     dash = (await client.get("/api/v1/dashboard?period=custom&date_from=2026-10-01&date_to=2026-10-31",
                              headers=await f("bm1"))).json()
     assert dash["totals"]["logged_in"] == 1 and dash["totals"]["validated"] == 1
+    # lead conversion counts every entry since Takeoff start, whatever the period picked (Takeoff master)
+    later = (await client.get("/api/v1/dashboard?period=custom&date_from=2026-11-01&date_to=2026-11-30",
+                              headers=await f("bm1"))).json()
+    assert later["totals"]["entries"] == 0
+    assert later["conversion"] == {"since": "2026-09-22", "total": {"validated": 1, "logged_in": 1, "rejected": 0, "open": 0},
+                                   "regions": [{"region": "Region One", "validated": 1, "logged_in": 1, "rejected": 0,
+                                                "open": 0}]}
+    other = (await client.get("/api/v1/dashboard", headers=await f("bm3"))).json()
+    assert other["conversion"]["regions"] == []  # scoped: Branch Three's BM does not see Region One
 
 
 async def test_selection_rules_in_order(client, tenant_a, clock):

@@ -133,7 +133,7 @@ test('3.1 HR & Admin has the employee roster for the monitor', async () => {
 
 test('dashboard offers last week (on a Monday, this week is still empty)', async () => {
   const seen: string[] = []
-  const dash = { period: { from: '2026-10-26', to: '2026-11-01' }, totals: {}, rag: {}, by_category: {}, by_status: {}, trend: [], branches: [], conversion: [] }
+  const dash = { period: { from: '2026-10-26', to: '2026-11-01' }, totals: {}, rag: {}, by_category: {}, by_status: {}, trend: [], branches: [], conversion: { since: '2026-09-22', regions: [], total: { validated: 0, logged_in: 0, rejected: 0, open: 0 } } }
   installApiMock('admin', { '/dashboard': (cfg: { params: { period: string } }) => { seen.push(cfg.params.period); return dash } })
   renderApp('/admin/dashboard')
   await userEvent.click(await screen.findByRole('button', { name: 'Last week' }))

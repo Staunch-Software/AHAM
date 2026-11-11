@@ -14,8 +14,20 @@ interface Dash {
   by_status: Record<string, number>
   trend: { day: string; entries: number }[]
   branches: { branch_id: string; branch: string; region: string | null; entries: number; lead_prospect: number; validated: number; logged_in: number; red: number; amber: number; green: number; sos: number }[]
-  conversion: { region: string | null; validated: number; logged_in: number; rejected: number; open: number }[]
+  conversion: { since: string; regions: ConversionRow[]; total: Omit<ConversionRow, 'region'> }
 }
+
+interface ConversionRow { region: string | null; validated: number; logged_in: number; rejected: number; open: number }
+const loginPct = (r: Omit<ConversionRow, 'region'>) => (r.validated ? `${((r.logged_in / r.validated) * 100).toFixed(1)}%` : '—')
+
+/** What each column of the lead conversion table counts (the Takeoff master's rules). */
+const CONVERSION_GUIDE: [string, string][] = [
+  ['Validated leads', 'Lead-type entries (a Lead, a DSA/CP converted to a lead, or an entry carrying a lead action) that are customer-validated: a call validated them, or they are the Sankalp success. Repeat entries by the same SO are left out.'],
+  ['Logged in', 'Of those, the ones that are the Sankalp success: the earliest logged-in entry for its TCS ID, with the login after the entry date. A second entry for the same customer does not count again.'],
+  ['Rejected', 'Of those, the ones whose lead outcome is Rejected (a branch R1–R6 answer, or Rejected on the tracker).'],
+  ['Open', 'Validated − Logged in − Rejected: still being worked by the branch or the call centre.'],
+  ['Login %', 'Logged in ÷ Validated leads: how many confirmed leads became business.'],
+]
 
 export type Period = 'today' | 'week' | 'last_week' | 'month'
 export const PERIODS: { value: Period; label: string }[] = [
@@ -122,19 +134,30 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          <Card title="Sankalp lead conversion" subtitle="Validated leads by region: logged in (the Sankalp success), rejected, or still open" className="mt-6" flush>
-            {data.conversion.length === 0 ? <EmptyState icon={<BadgeCheck size={20} />} title="No validated leads in this period." /> : (
+          <Card title="Sankalp lead conversion" subtitle={`Takeoff leads validated by the call centre, by region · every entry since Takeoff start (${data.conversion.since}), whatever the period above`} className="mt-6" flush>
+            {data.conversion.regions.length === 0 ? <EmptyState icon={<BadgeCheck size={20} />} title="No validated leads yet." /> : (
               <Table head={['Region', 'Validated leads', 'Logged in', 'Rejected', 'Open', 'Login %']} exportName="Lead conversion">
-                {data.conversion.map((c) => (
+                {data.conversion.regions.map((c) => (
                   <tr key={c.region ?? '—'}>
                     <Td className="font-medium text-slate-900">{c.region ?? '—'}</Td><Td className="tabular">{c.validated}</Td>
                     <Td className="tabular text-emerald-700">{c.logged_in}</Td><Td className="tabular text-roof-700">{c.rejected}</Td>
-                    <Td className="tabular">{c.open}</Td>
-                    <Td className="tabular font-semibold">{c.validated ? `${((c.logged_in / c.validated) * 100).toFixed(1)}%` : '—'}</Td>
+                    <Td className="tabular">{c.open}</Td><Td className="tabular font-semibold">{loginPct(c)}</Td>
                   </tr>
                 ))}
+                <tr className="bg-slate-50 font-semibold text-slate-900">
+                  <Td>Total</Td><Td className="tabular">{data.conversion.total.validated}</Td>
+                  <Td className="tabular text-emerald-700">{data.conversion.total.logged_in}</Td>
+                  <Td className="tabular text-roof-700">{data.conversion.total.rejected}</Td>
+                  <Td className="tabular">{data.conversion.total.open}</Td><Td className="tabular">{loginPct(data.conversion.total)}</Td>
+                </tr>
               </Table>
             )}
+            <details className="border-t border-slate-100 px-5 py-3 text-sm">
+              <summary className="cursor-pointer font-medium text-brand-700">What the columns count</summary>
+              <dl className="mt-3 space-y-2">
+                {CONVERSION_GUIDE.map(([k, v]) => <div key={k}><dt className="font-semibold text-slate-800">{k}</dt><dd className="text-slate-600">{v}</dd></div>)}
+              </dl>
+            </details>
           </Card>
 
           <Card title="Branches" className="mt-6" flush>

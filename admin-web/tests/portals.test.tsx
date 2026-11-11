@@ -12,7 +12,11 @@ const DASH = {
   period: { from: '2026-10-21', to: '2026-10-21' },
   totals: { entries: 12, lead_prospect: 7, dsa_cp: 3, validated: 4, logged_in: 1, sankalp_success: 1, awaiting_call: 2, open_so_actions: 3, active_sos: 2 },
   rag: { GREEN: 4, AMBER: 2 }, by_category: { Lead: 5 }, by_status: { Validated: 4 }, trend: [{ day: '2026-10-21', entries: 12 }], branches: [],
-  conversion: [{ region: 'Karnataka', validated: 4, logged_in: 1, rejected: 1, open: 2 }],
+  conversion: {
+    since: '2026-09-22',
+    regions: [{ region: 'Karnataka', validated: 4, logged_in: 1, rejected: 1, open: 2 }, { region: 'Chennai 1', validated: 6, logged_in: 3, rejected: 0, open: 3 }],
+    total: { validated: 10, logged_in: 4, rejected: 1, open: 5 },
+  },
 }
 
 test('the chooser offers the three web portals and points SOs to the app', async () => {
@@ -68,6 +72,8 @@ test('the menu shows only what the role may do', async () => {
   expect(await screen.findByTestId('kpi-entries')).toHaveTextContent('12')
   // lead conversion by region, as the Takeoff master: 1 of 4 validated leads logged in
   expect(screen.getByRole('row', { name: /Karnataka 4 1 1 2 25.0%/ })).toBeInTheDocument()
+  expect(screen.getByRole('row', { name: /Total 10 4 1 5 40.0%/ })).toBeInTheDocument()  // every entry since Takeoff start
+  expect(screen.getByText(/since Takeoff start \(2026-09-22\)/)).toBeInTheDocument()
   unmount()
 
   installApiMock('product_manager', { '/dashboard': DASH })

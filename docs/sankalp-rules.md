@@ -137,8 +137,14 @@ Second pass against the Takeoff master (2026-11-11):
   while the tracker gives the entry to an owner (branch, call centre, done).
 - A call's Next date runs from tomorrow up to 30 working days ahead (Sundays and holidays not counted), never a Sunday.
 - The lead card's handling branch applies once the lead has a lead ID.
-- Call-centre report: "First try on time" is counted over validated entries. The dashboard shows the Sankalp lead
-  conversion by region (validated leads, logged in, rejected, open, login %).
+- Call-centre report: "First try on time" is counted over validated entries.
+- Dashboard → **Sankalp lead conversion**, by region, over every entry since Takeoff start in the user's scope (not
+  the period picked, as in the master), with a Total row:
+  - *Validated leads*: lead-type entries (a Lead, a DSA/CP converted to a lead, or an entry carrying a lead action)
+    that are customer-validated (validated on a call, or the Sankalp success); repeat entries by the same SO are out.
+  - *Logged in*: of those, the Sankalp success (the earliest logged-in entry for its TCS ID, login after the entry date).
+  - *Rejected*: of those, lead outcome Rejected (branch R1–R6, or Rejected on the tracker).
+  - *Open*: Validated − Logged in − Rejected. *Login %*: Logged in ÷ Validated leads.
 Kept as the document says (the Excel differs): a LAP login never validates (11.3); a lost lead is NA, not Red (9);
 the repeat check uses the SO now on the entry, not the Emp ID in the Entry ID.
 
