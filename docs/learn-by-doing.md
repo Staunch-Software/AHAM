@@ -297,26 +297,31 @@ exceptions 1, errors 1*), then Upload:
 - **Row 11** is refused: "31-02-2026" is not a real date.
 - **HL1004** is *excluded* (status Cancelled).
 - **HL1005** is an *exception*: no tenure, so it is left out of the calculation until fixed.
-- **HL1003** has two tranches (20 Oct and 5 Nov): one loan account, two records.
+- **HL1003** has two tranches (20 Oct and 5 Nov): two rows, so it counts twice in "No." (once in October, once in
+  November).
 
 **IRR report**, as of **07-11-2026**, level Company:
 
-| | Today (TD) | Month to date (MTD) | Year to date (YTD, from 1 Apr) |
+| | For the day (TD) | Month to date (MTD) | Year to date (YTD, from 1 Apr) |
 |---|---|---|---|
-| Home loans (HL) | 1 account · **9.00%** | 3 accounts · **9.06%** | 3 accounts · **8.97%** |
-| Non-home loans (NHL / LAP) | 1 account · **12.00%** | 1 account · **12.00%** | 2 accounts · **13.04%** |
+| Home loans (HL) | No. 1 · **9.00%** | No. 3 · **9.21%** | No. 4 · **9.09%** |
+| Non-home loans (NHL / LAP) | No. 1 · **12.00%** | No. 1 · **12.00%** | No. 2 · **13.54%** |
 
-Check one by hand: HL, MTD = (30 lakh × 240 × 9 + 15 lakh × 180 × 9.5 + 10 lakh × 240 × 8.75) ÷ (30 × 240 + 15 × 180 +
-10 × 240) = 1,11,450 ÷ 12,300 = **9.06%**. HL1006 (31 Mar 2026) is in the previous financial year, so not in YTD.
+Check one by hand: HL, MTD. Transaction IRR in lakh-months: 30 × 240 × 9 + 15 × 180 × 9.5 + 10 × 240 × 8.75 = 1,11,450.
+Average tenure = (240 + 180 + 240) ÷ 3 = 220 months. Denominator = 55 lakh × 220 = 12,100. IRR = 1,11,450 ÷ 12,100 =
+**9.21%**. HL1006 (31 Mar 2026) is in the previous financial year, so not in YTD. Click the Company row to see the
+same sums under the loans.
 By branch (level Branch), YTD HL: Vijayawada **8.88%**, Guntur **9.50%**, Nellore **–** (no home loans).
 
-Back on **Disbursement register → Reconciliation**, set the period to 01-11-2026 – 07-11-2026: all three checks are
-green (branch totals = company total, region totals = company total, **year to date = sum of its months**). The
-month-by-month table shows Aug, Oct and Nov 2026 with each month's numerator and denominator; HL1003 counts as one
-loan account in the year although its tranches are in two months.
+Back on **Disbursement register → Reconciliation**, set the period to 01-11-2026 – 07-11-2026, product **HL**: all
+three checks are green (branch totals = company total, region totals = company total, **year to date = sum of its
+months**). The month-by-month table shows Oct and Nov 2026 with each month's rows, amount, average tenure, denominator
+and numerator; the year's rows, amount and numerator are the sums of the months, but its denominator is not (it is the
+year's amount × the year's average tenure). Switch the product to **NHL**: Aug and Nov 2026. HL and NHL are never
+shown together.
 
 Then **IRR exceptions** → HL1005 → tenure **180** → save. The report changes: Guntur MTD HL **9.39%**, company MTD HL
-**9.09%**, company YTD HL **9.00%**.
+**9.34%** (No. 4), company YTD HL **9.23%** (No. 5).
 
 ---
 

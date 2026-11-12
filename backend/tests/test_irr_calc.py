@@ -1,4 +1,5 @@
-"""The weighted average IRR formula (BRD section 6) and the register reader, without a database."""
+"""The weighted average IRR formula (Aham's process note, confirmed 12 Nov 2026) and the register reader, without a
+database."""
 import random
 from datetime import date, datetime
 from decimal import Decimal as D
@@ -10,12 +11,19 @@ A = calc.Loan("A", date(2026, 11, 5), D("3000000"), D("240"), D("9"))
 B = calc.Loan("B", date(2026, 11, 5), D("500000"), D("60"), D("12"))
 
 
-def test_brd_example_is_9_12_not_amount_weighted_or_average_tenure():
+def test_aham_example_each_loans_own_tenure_over_amount_times_plain_average_tenure():
     irr = calc.weighted_irr([A, B])
-    assert irr == D("9.12")  # 68,400 / 7,500 in lakh-months
-    assert A.weight + B.weight == D("750000000") and A.product + B.product == D("6840000000")
+    assert A.product + B.product == D("6840000000")  # Transaction IRR = amount x the loan's own tenure x rate
+    g = calc.Group()
+    g.add(A)
+    g.add(B)
+    assert g.average_tenure == D(150) and g.denominator == D("525000000")  # 35 lakh x (240 + 60) / 2
+    assert irr == D("6840000000") / D("525000000") and calc.rounded(irr) == D("13.03")  # 68,400 / 5,250 lakh-months
+    # not the earlier formula (average tenure weighted by amount) nor the average tenure inside each loan's figure
+    by_amount = (A.product + B.product) / (A.amount * A.tenure + B.amount * B.tenure)
     amounts_only = (A.amount * A.roi + B.amount * B.roi) / (A.amount + B.amount)
-    assert calc.rounded(amounts_only) == D("9.43") and calc.rounded(irr) != calc.rounded(amounts_only)
+    assert (calc.rounded(by_amount), calc.rounded(amounts_only)) == (D("9.12"), D("9.43"))
+    assert irr > max(A.roi, B.roi)  # with a plain average the IRR can be above every loan's own rate
 
 
 def test_empty_group_has_no_irr_not_zero():
@@ -30,25 +38,25 @@ def test_mtd_and_ytd_are_cumulative_not_averages_of_days_or_branches():
     day2 = calc.Loan("L2", date(2026, 11, 3), D("100000"), D("12"), D("14"), branch_id="b2")
     out = calc.summarise([day1, day2], date(2026, 11, 3))
     mtd = out[None]["MTD"].irr
-    assert mtd == (day1.product + day2.product) / (day1.weight + day2.weight)
-    assert calc.rounded(mtd) == D("8.03")
+    by_hand = (day1.product + day2.product) / ((day1.amount + day2.amount) * (day1.tenure + day2.tenure) / 2)
+    assert calc.rounded(mtd, 12) == calc.rounded(by_hand, 12) and calc.rounded(mtd) == D("13.97")
     assert calc.rounded(mtd) != calc.rounded((D(8) + D(14)) / 2)  # not the average of the two days / branches
     by_branch = calc.summarise([day1, day2], date(2026, 11, 3), key=lambda x: x.branch_id)
     assert by_branch["b1"]["MTD"].irr == D(8) and by_branch["b2"]["TD"].irr == D(14)
     assert by_branch["b1"]["TD"].irr is None  # nothing on 3 Nov in b1
 
 
-def test_accounts_are_distinct_loan_accounts_tranches_count_once():
+def test_no_counts_disbursement_rows_so_tranches_count_twice():
     t1 = calc.Loan("HL1", date(2026, 10, 20), D("1000000"), D("240"), D("9"))
     t2 = calc.Loan("HL1", date(2026, 11, 4), D("500000"), D("240"), D("9"))
     other = calc.Loan("HL2", date(2026, 11, 4), D("200000"), D("120"), D("10"))
     out = calc.summarise([t1, t2, other], date(2026, 11, 4))[None]
-    assert out["YTD"].accounts == 2 and out["YTD"].records == 3  # HL1 once in the year
-    assert out["MTD"].accounts == 2 and out["TD"].accounts == 2
-    oct_ = calc.summarise([t1, t2, other], date(2026, 10, 31))[None]
-    assert oct_["MTD"].accounts == 1  # and once in October's month to date
-    # each tranche is weighted by its own amount
-    assert out["YTD"].weight == D("1000000") * 240 + D("500000") * 240 + D("200000") * 120
+    assert out["YTD"].records == 3  # HL1's two tranches are two rows
+    assert out["MTD"].records == 2 and out["TD"].records == 2
+    assert calc.summarise([t1, t2, other], date(2026, 10, 31))[None]["MTD"].records == 1
+    # each tranche has its own amount and its tenure counts in the average once per row
+    assert (out["YTD"].amount, out["YTD"].tenure, out["YTD"].average_tenure) == (D("1700000"), D(600), D(200))
+    assert calc.rounded(out["YTD"].irr) == D("10.24")  # 3,480,000,000 / (17 lakh x 200)
 
 
 def test_financial_year_boundary_31_march_1_april():
@@ -57,33 +65,37 @@ def test_financial_year_boundary_31_march_1_april():
     assert calc.fy_start(date(2026, 3, 31)) == date(2025, 4, 1)
     assert calc.fy_start(date(2026, 4, 1)) == date(2026, 4, 1)
     on_31 = calc.summarise([march, april], date(2026, 3, 31))[None]
-    assert on_31["YTD"].irr == D(8) and on_31["YTD"].accounts == 1
+    assert on_31["YTD"].irr == D(8) and on_31["YTD"].records == 1
     on_1 = calc.summarise([march, april], date(2026, 4, 1))[None]
-    assert on_1["YTD"].irr == D(10) and on_1["YTD"].accounts == 1  # the new year starts afresh
+    assert on_1["YTD"].irr == D(10) and on_1["YTD"].records == 1  # the new year starts afresh
     # a January year start (setting)
     jan = calc.summarise([march, april], date(2026, 4, 1), fy_start_month=1)[None]
-    assert jan["YTD"].accounts == 2 and jan["YTD"].irr == D(9)
+    assert jan["YTD"].records == 2 and jan["YTD"].irr == D(9)
     assert calc.period_bounds(date(2026, 11, 9)) == {"TD": (date(2026, 11, 9), date(2026, 11, 9)),
                                                       "MTD": (date(2026, 11, 1), date(2026, 11, 9)),
                                                       "YTD": (date(2026, 4, 1), date(2026, 11, 9))}
 
 
-def test_every_group_irr_lies_between_its_lowest_and_highest_roi():
+def test_totals_come_from_the_summed_rows_never_from_branch_percentages():
     rnd = random.Random(20261109)
     branches = ["b1", "b2", "b3", "b4"]
     loans = [calc.Loan(f"L{rnd.randint(1, 300)}", date(2026, rnd.randint(4, 11), rnd.randint(1, 28)),
                        D(rnd.randint(50_000, 9_000_000)), D(rnd.choice([12, 36, 60, 120, 180, 240, 300])),
                        D(rnd.randint(750, 1800)) / 100, branch_id=rnd.choice(branches)) for _ in range(800)]
     as_of = date(2026, 11, 28)
-    for key in (None, lambda x: x.branch_id):
-        for groups in calc.summarise(loans, as_of, key=key).values():
-            for g in groups.values():
-                if g.records:
-                    assert g.min_roi <= g.irr <= g.max_roi, (g.min_roi, g.irr, g.max_roi)
-    # the company total is worked out from the loans, and equals the ratio of the summed branch sums
     by_branch = calc.summarise(loans, as_of, key=lambda x: x.branch_id)
+    for groups in by_branch.values():
+        for g in groups.values():
+            if g.records:  # each group: its own sums, Transaction IRR / (amount x plain average tenure)
+                assert calc.rounded(g.irr, 12) == calc.rounded(g.product / (g.amount * g.tenure / g.records), 12)
+    # the company total is worked out from the rows: the four sums add up across branches, the IRR does not
     total = calc.summarise(loans, as_of)[None]["YTD"]
-    assert total.irr == sum(g["YTD"].product for g in by_branch.values()) / sum(g["YTD"].weight for g in by_branch.values())
+    parts = [g["YTD"] for g in by_branch.values()]
+    assert (total.records, total.amount, total.tenure, total.product) == (
+        sum(g.records for g in parts), sum(g.amount for g in parts), sum(g.tenure for g in parts),
+        sum(g.product for g in parts))
+    assert total.irr == calc.irr_of(total.product, total.amount, total.tenure, total.records)
+    assert total.denominator != sum(g.denominator for g in parts)
 
 
 def test_rounding_and_band():

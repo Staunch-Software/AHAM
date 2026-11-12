@@ -1,21 +1,26 @@
-"""The weighted average IRR formula (BRD section 6). Pure: no database, no web. Tested in tests/test_irr_calc.py.
+"""The weighted average IRR formula, as Aham's process note (12 Nov 2026) gives it and Aham confirmed. Pure: no
+database, no web. Tested in tests/test_irr_calc.py.
 
-Per eligible disbursement record: weight = disbursed amount x loan tenure (months); product = weight x ROI (%).
-The IRR of a group = sum of products / sum of weights.
+Per eligible disbursement row: Transaction IRR = disbursed amount x that row's own tenure (months) x ROI (%).
+The IRR of a group = sum of Transaction IRR / (sum of disbursed amount x average tenure), where the average tenure is
+the plain average of the tenure column over the group's rows (sum of tenures / number of rows), not weighted by amount.
 
-- Month and year to date add up the records of the period (cumulative numerator over cumulative denominator). They are
-  never an average of daily, branch or region percentages, and a total always comes from the loan-level records.
-- Each loan's own tenure is used. (The BRD's other sentence, "total amount x average tenure", is a known error.)
+- "No." is the number of disbursement rows: a loan paid out in two tranches counts twice.
+- HL and NHL (LAP) are always worked out separately; nothing adds the two together.
+- Month and year to date are worked out from all the rows of the period (their amounts, tenures and Transaction IRRs
+  added up), never from daily, branch or region percentages; a total always comes from the rows themselves.
+- Because the average tenure is not weighted by amount, a group's IRR can be above or below every row's own rate
+  (Loan A 30 lakh, 240 months, 9% and Loan B 5 lakh, 60 months, 12% give 13.03%).
 - Everything is Decimal; rounding happens only for display (`rounded`).
-- A group with no records has no IRR (None), never 0%.
+- A group with no rows has no IRR (None), never 0%.
 """
 from collections.abc import Callable, Hashable, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
 PERIODS = ("TD", "MTD", "YTD")
-PERIOD_LABELS = {"TD": "Today (TD)", "MTD": "Month to date (MTD)", "YTD": "Year to date (YTD)"}
+PERIOD_LABELS = {"TD": "For the day (TD)", "MTD": "Month to date (MTD)", "YTD": "Year to date (YTD)"}
 CLASSES = ("HL", "NHL")
 CLASS_LABELS = {"HL": "Home Loan (HL)", "NHL": "Non-Home Loan / LAP (NHL)"}
 ZERO = Decimal(0)
@@ -23,7 +28,7 @@ ZERO = Decimal(0)
 
 @dataclass(frozen=True)
 class Loan:
-    """One eligible disbursement record: not cancelled / reversed and without an open exception."""
+    """One eligible disbursement row: not cancelled / reversed and without an open exception."""
 
     account: str
     day: date
@@ -35,42 +40,54 @@ class Loan:
     region_id: Hashable = None
 
     @property
-    def weight(self) -> Decimal:
-        return self.amount * self.tenure
-
-    @property
     def product(self) -> Decimal:
-        return self.weight * self.roi
+        """The row's Transaction IRR: amount x its own tenure x ROI."""
+        return self.amount * self.tenure * self.roi
+
+
+def irr_of(product: Decimal, amount: Decimal, tenure: Decimal, records: int) -> Decimal | None:
+    """sum of Transaction IRR / (sum of amount x (sum of tenure / rows)), from the four sums of a group."""
+    if not records or not amount or not tenure:
+        return None
+    return Decimal(product) * records / (Decimal(amount) * Decimal(tenure))
+
+
+def average_tenure(tenure: Decimal, records: int) -> Decimal | None:
+    return Decimal(tenure) / records if records else None
+
+
+def denominator(amount: Decimal, tenure: Decimal, records: int) -> Decimal:
+    """sum of amount x average tenure."""
+    return Decimal(amount) * Decimal(tenure) / records if records else ZERO
 
 
 @dataclass
 class Group:
-    """Running sums of one group (a branch, a region, the company) over one period."""
+    """Running sums of one group (a branch, a region, the company) over one period. All four add up across days,
+    months, branches and regions; the IRR is worked out from them at the end."""
 
-    weight: Decimal = ZERO
-    product: Decimal = ZERO
+    product: Decimal = ZERO  # sum of Transaction IRR
     amount: Decimal = ZERO
-    records: int = 0
-    account_numbers: set = field(default_factory=set)
-    min_roi: Decimal | None = None
-    max_roi: Decimal | None = None
+    tenure: Decimal = ZERO  # sum of the rows' tenures, for the plain average
+    records: int = 0  # rows: "No."
 
     def add(self, loan: Loan) -> None:
-        self.weight += loan.weight
         self.product += loan.product
         self.amount += loan.amount
+        self.tenure += loan.tenure
         self.records += 1
-        self.account_numbers.add(loan.account)  # an account with several tranches counts once
-        self.min_roi = loan.roi if self.min_roi is None else min(self.min_roi, loan.roi)
-        self.max_roi = loan.roi if self.max_roi is None else max(self.max_roi, loan.roi)
 
     @property
-    def accounts(self) -> int:
-        return len(self.account_numbers)
+    def average_tenure(self) -> Decimal | None:
+        return average_tenure(self.tenure, self.records)
+
+    @property
+    def denominator(self) -> Decimal:
+        return denominator(self.amount, self.tenure, self.records)
 
     @property
     def irr(self) -> Decimal | None:
-        return self.product / self.weight if self.weight else None
+        return irr_of(self.product, self.amount, self.tenure, self.records)
 
 
 def weighted_irr(loans: Iterable[Loan]) -> Decimal | None:
@@ -86,7 +103,7 @@ def fy_start(day: date, start_month: int = 4) -> date:
 
 
 def period_bounds(as_of: date, fy_start_month: int = 4) -> dict[str, tuple[date, date]]:
-    """Inclusive first and last day of Today, Month to date and Year to date."""
+    """Inclusive first and last day of the day itself (TD), Month to date and Year to date."""
     return {"TD": (as_of, as_of), "MTD": (as_of.replace(day=1), as_of), "YTD": (fy_start(as_of, fy_start_month), as_of)}
 
 

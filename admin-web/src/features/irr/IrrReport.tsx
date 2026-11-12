@@ -13,10 +13,10 @@ import {
 
 type Tab = 'periods' | 'month'
 interface DetailTarget { title: string; params: Record<string, string | undefined>; period: Period }
-interface DetailItem { id: string; loan_account: string; disbursement_ref: string | null; disbursement_date: string; branch: string; branch_code: string; region: string; product: string; product_class: string; amount: number; tenure_months: number; roi: number; weight: number; weighted_roi: number }
-interface Detail { as_of: string; from: string; to: string; decimals: number; total: number; items: DetailItem[]; totals: { records: number; accounts: number; amount: number; weight: number; weighted_roi: number; irr: number | null } }
+interface DetailItem { id: string; loan_account: string; disbursement_ref: string | null; disbursement_date: string; branch: string; branch_code: string; region: string; product: string; product_class: string; amount: number; tenure_months: number; roi: number; weighted_roi: number }
+interface Detail { as_of: string; from: string; to: string; decimals: number; total: number; items: DetailItem[]; totals: { records: number; amount: number; tenure: number; average_tenure: number | null; denominator: number; weighted_roi: number; irr: number | null } }
 
-const ACC = 'Number of loan accounts'
+const ACC = 'Number of disbursements'
 const IRR = 'Weighted average IRR (%)'
 
 const lead = (level: Level) => (level === 'branch' ? ['Branch', 'Region'] : level === 'region' ? ['Region'] : ['Scope'])
@@ -37,10 +37,10 @@ function RowLabel({ r, level, total, onOpen }: { r: PeriodRow | ClassRow; level:
   )
 }
 
-function Cells({ cell, decimals, flagged }: { cell: { accounts: number; irr: number | null }; decimals: number; flagged: boolean }) {
+function Cells({ cell, decimals, flagged }: { cell: { records: number; irr: number | null }; decimals: number; flagged: boolean }) {
   return (
     <>
-      <Td className="tabular border-l border-slate-100 text-right">{cell.accounts}</Td>
+      <Td className="tabular border-l border-slate-100 text-right">{cell.records}</Td>
       <Td className={cx('tabular text-right font-semibold', flagged ? 'text-amber-700' : 'text-slate-900')}>
         {flagged && <TriangleAlert size={13} className="mr-1 inline align-[-2px]" aria-label="Outside the expected range" />}
         {fmtIrr(cell.irr, decimals)}
@@ -51,8 +51,10 @@ function Cells({ cell, decimals, flagged }: { cell: { accounts: number; irr: num
 
 function DetailDialog({ target, asOf, onClose }: { target: DetailTarget; asOf: string; onClose: () => void }) {
   const [period, setPeriod] = useState<Period>(target.period)
+  // one product class at a time: HL and NHL are never added together
+  const [cls, setCls] = useState<ProductClass>((target.params.product as ProductClass | undefined) ?? 'HL')
   const [page, setPage] = useState(1)
-  const params = { ...target.params, as_of: asOf, period }
+  const params = { ...target.params, product: cls, as_of: asOf, period }
   const { data, error, isLoading } = useQuery({
     queryKey: ['irr', 'detail', params, page],
     queryFn: async () => (await api.get<Detail>('/irr/detail', { params: { ...params, page, page_size: 25 } })).data,
@@ -62,22 +64,26 @@ function DetailDialog({ target, asOf, onClose }: { target: DetailTarget; asOf: s
   return (
     <Dialog title={`Loans behind the figure: ${target.title}`} onClose={onClose} wide>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <Segmented label="Period" value={period} onChange={(p) => { setPeriod(p); setPage(1) }} options={PERIODS.map((p) => ({ value: p, label: PERIOD_LABELS[p] }))} />
-        <ExportButtons url="/irr/detail" params={params} name={`irr_loans_${period}_${asOf}`} />
+        <div className="flex flex-wrap gap-3">
+          <Segmented label="Period" value={period} onChange={(p) => { setPeriod(p); setPage(1) }} options={PERIODS.map((p) => ({ value: p, label: PERIOD_LABELS[p] }))} />
+          <Segmented label="Product" value={cls} onChange={(c) => { setCls(c); setPage(1) }} options={CLASSES.map((c) => ({ value: c, label: c }))} />
+        </div>
+        <ExportButtons url="/irr/detail" params={params} name={`irr_loans_${period}_${cls}_${asOf}`} />
       </div>
       <ErrorBox error={error ? errorMessage(error) : null} />
       {data && t && (
         <p className="mb-3 text-sm text-slate-600" data-testid="detail-totals">
-          {fmtDay(data.from)} to {fmtDay(data.to)}: {t.records} disbursement{t.records === 1 ? '' : 's'}, {t.accounts} loan account{t.accounts === 1 ? '' : 's'}.
+          {fmtDay(data.from)} to {fmtDay(data.to)}, {CLASS_LABELS[cls]}: {t.records} disbursement{t.records === 1 ? '' : 's'}, amount ₹{fmtNum(t.amount)},
+          {' '}average tenure {fmtNum(t.average_tenure)} months ({fmtNum(t.tenure)} ÷ {t.records}).
           {' '}Weighted average IRR <strong className="text-brand-900">{fmtIrr(t.irr, data.decimals)}%</strong>
-          {t.irr != null && <> = {fmtNum(t.weighted_roi)} ÷ {fmtNum(t.weight)} (sum of amount × tenure × ROI ÷ sum of amount × tenure)</>}
+          {t.irr != null && <> = {fmtNum(t.weighted_roi)} ÷ {fmtNum(t.denominator)} (sum of Transaction IRR ÷ amount × average tenure)</>}
         </p>
       )}
       <div className="-mx-6 border-y border-slate-200">
         {isLoading ? <div className="space-y-2 p-4">{Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-8" />)}</div>
           : !data?.items.length ? <EmptyState title="No disbursements count in this period." />
             : (
-              <Table head={['Loan account', 'Date', 'Branch', 'Product', 'Amount (₹)', 'Tenure (months)', 'ROI (%)', 'Weight (amount × tenure)', 'Amount × tenure × ROI']}>
+              <Table head={['Loan account', 'Date', 'Branch', 'Product', 'Amount (₹)', 'Tenure (months)', 'ROI (%)', 'Transaction IRR (amount × tenure × ROI)']}>
                 {data.items.map((i) => (
                   <tr key={i.id}>
                     <Td className="whitespace-nowrap font-medium text-slate-900">{i.loan_account}{i.disbursement_ref && <span className="ml-1 text-xs text-slate-500">#{i.disbursement_ref}</span>}</Td>
@@ -87,7 +93,6 @@ function DetailDialog({ target, asOf, onClose }: { target: DetailTarget; asOf: s
                     <Td className="tabular text-right">{fmtNum(i.amount)}</Td>
                     <Td className="tabular text-right">{fmtNum(i.tenure_months)}</Td>
                     <Td className="tabular text-right">{fmtNum(i.roi, 4)}</Td>
-                    <Td className="tabular text-right">{fmtNum(i.weight)}</Td>
                     <Td className="tabular text-right">{fmtNum(i.weighted_roi, 4)}</Td>
                   </tr>
                 ))}
@@ -99,7 +104,7 @@ function DetailDialog({ target, asOf, onClose }: { target: DetailTarget; asOf: s
   )
 }
 
-/** BRD "Weighted average IRR – HL & NHL (LAP)": Today, Month to date and Year to date from the Disbursement Register. */
+/** BRD "Weighted average IRR – HL & NHL (LAP)": for the day (TD), month to date and year to date from the Disbursement Register. */
 export default function IrrReport() {
   const { can, path } = useAuth()
   const { data: branches } = useBranches()
@@ -149,13 +154,15 @@ export default function IrrReport() {
       </PageTitle>
 
       <Note>
-        Weighted average IRR = sum of (disbursed amount × tenure in months × ROI) ÷ sum of (disbursed amount × tenure in months), over every
-        disbursement of the period. Month and year to date add up all the loans since the 1st of the month and the start of the financial year;
-        they are never an average of daily, branch or region figures. Cancelled and reversed disbursements are left out. Click a row to see its loans.
+        Weighted average IRR = sum of Transaction IRR (disbursed amount × that loan's tenure in months × ROI) ÷ (sum of disbursed amount × average tenure),
+        where the average tenure is the plain average of the tenures of the period's disbursements. &ldquo;No.&rdquo; counts disbursements, so a loan paid in
+        two tranches counts twice. HL and NHL are always worked out separately. Month and year to date use all the disbursements since the 1st of the
+        month and the start of the financial year; they are never an average of daily, branch or region figures. Cancelled and reversed disbursements
+        are left out. Click a row to see its loans.
       </Note>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Segmented label="Report layout" value={tab} onChange={setTab} options={[{ value: 'periods', label: 'Today / Month / Year to date' }, { value: 'month', label: 'HL & NHL month to date' }]} />
+        <Segmented label="Report layout" value={tab} onChange={setTab} options={[{ value: 'periods', label: 'TD / MTD / YTD' }, { value: 'month', label: 'HL & NHL month to date' }]} />
         {tab === 'periods' && <Segmented label="Product" value={product} onChange={setProduct} options={CLASSES.map((c) => ({ value: c, label: CLASS_LABELS[c] }))} />}
         <Segmented label="Level" value={level} onChange={setLevel} options={LEVELS} />
       </div>
@@ -174,7 +181,7 @@ export default function IrrReport() {
         </div>
       )}
 
-      <Card flush title={tab === 'periods' ? `${CLASS_LABELS[product]}: today, month to date and year to date` : 'HL and NHL, month to date'}
+      <Card flush title={tab === 'periods' ? `${CLASS_LABELS[product]}: for the day, month to date and year to date` : 'HL and NHL, month to date'}
         subtitle={pd ? `As of ${fmtDay(day)}. Month to date from ${fmtDay(pd.periods.MTD.from)}, year to date from ${fmtDay(pd.periods.YTD.from)}.`
           : md ? `${fmtDay(md.period.from)} to ${fmtDay(md.period.to)}.` : undefined}
         actions={data && <ExportButtons url={tab === 'periods' ? '/irr/report' : '/irr/report/month-by-product'} params={{ ...filters, as_of: day, ...(tab === 'periods' ? { product } : {}) }}

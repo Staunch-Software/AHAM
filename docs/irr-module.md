@@ -2,24 +2,59 @@
 
 From the client's BRD "Automation of Weighted Average IRR Calculation – HL & NHL (LAP)". MIS uploads the
 **Disbursement Register**; the app reports the weighted average IRR of Home Loans (HL) and Non-Home Loans (NHL = LAP)
-for **Today (TD)**, **Month to date (MTD)** and **Year to date (YTD)**, by branch, region and for the company.
+for **the day (TD; Aham's note also says FTD)**, **Month to date (MTD)** and **Year to date (YTD)**, by branch, region and for the company.
 
-## The formula (BRD section 6)
-For every eligible disbursement record:
+## The formula (Aham's process note, confirmed 12 Nov 2026)
+For every eligible disbursement row:
 
-- weight = disbursed amount × loan tenure (months)
-- product = weight × ROI (%)
-- weighted average IRR of a group = Σ product ÷ Σ weight
+- **Transaction IRR** = disbursed amount × **that row's own** tenure (months) × ROI (%)
 
-MTD and YTD are always the sums over the records of the period (cumulative numerator ÷ cumulative denominator), never
-an average of daily, branch or region percentages; every total is worked out from the loan-level records. Each loan's
-own tenure is used (the BRD's sentence about "total amount × average tenure" is a known error and is not implemented).
-Everything is calculated with `Decimal`; rounding (half up) happens only for display. A group with no records has no
-IRR: the screen shows "–", never 0%.
+For a group (a branch, a region or the company, over TD, MTD or YTD):
 
-Worked example (also a test): Loan A ₹30,00,000, 240 months, 9% and Loan B ₹5,00,000, 60 months, 12% →
-(7,200 × 9 + 300 × 12) ÷ (7,200 + 300) lakh-months = 68,400 ÷ 7,500 = **9.12%**. Weighting by amount only would give
-9.43%, which is wrong.
+- average tenure = Σ tenure ÷ number of rows (the **plain** average of the tenure column, not weighted by amount)
+- weighted average IRR = Σ Transaction IRR ÷ (Σ disbursed amount × average tenure)
+- **No.** = the number of disbursement rows: a loan paid out in two tranches counts twice
+
+**HL and NHL (LAP) are always worked out separately**: every report, the loan-level detail and the reconciliation are
+for one product class at a time, and nothing adds the two together.
+
+MTD and YTD are always worked out from all the rows of the period (their amounts, tenures and Transaction IRRs added
+up), never from daily, branch or region percentages; every total is worked out from the rows themselves. The four sums
+(rows, amount, tenure, Transaction IRR) add up across days, months, branches and regions; the denominator does not,
+because it multiplies the whole group's amount by the whole group's average tenure. Everything is calculated with
+`Decimal`; rounding (half up) happens only for display. A group with no rows has no IRR: the screen shows "–", never 0%.
+
+Worked example (also a test): Loan A ₹30,00,000, 240 months, 9% and Loan B ₹5,00,000, 60 months, 12%:
+
+- Transaction IRR: 30 lakh × 240 × 9 = 64,800 and 5 lakh × 60 × 12 = 3,600 (in lakh-months); Σ = 68,400
+- average tenure = (240 + 60) ÷ 2 = 150 months; denominator = 35 lakh × 150 = 5,250
+- IRR = 68,400 ÷ 5,250 = **13.03%**
+
+Because the average tenure is not weighted by amount, a group's IRR can be **above or below every loan's own rate**
+(13.03% here, against 9% and 12%). The expected-range warning (IRR settings) is the place to catch a figure that
+looks wrong.
+
+## Aham's process note (12 Nov 2026)
+Aham sent "Process Note – HL & NHL IRR Calculation". It confirms: the daily Disbursement Register as the source; HL
+and LAP (= NHL) by branch and region; FTD/TD, MTD and YTD on a financial-year basis; the two report layouts (HL & LAP
+MTD: region × HL No./IRR × NHL No./IRR; and TD / MTD / YTD: region × No./IRR per period); per loan, **Transaction IRR =
+disbursed amount × loan tenure × interest rate** (our "product"); and a review of accounts, tenure, rate, IRR and
+regional totals before the report is shared (our Reconciliation and Exceptions pages).
+
+The note wrote `Σ Transaction IRR ÷ (Σ disbursed amount × average tenure)` without saying which average, and its
+last page used the average tenure inside each loan's figure too. With the worked example the readings give 9.12%
+(average weighted by amount, the app's earlier formula), 13.03% (plain average) or 9.43% (average tenure in each loan's
+figure as well). **Decided on 12 Nov 2026:**
+
+| Question | Answer |
+|---|---|
+| Which average tenure? | The plain average of the tenure column (Σ tenure ÷ rows) |
+| Each loan's own tenure in its Transaction IRR, or the average? | The loan's own tenure |
+| TD / MTD / YTD: one table per product, or HL and LAP together? | Separate, everywhere |
+| "No.": loan accounts or disbursement rows? | Rows (a loan in two tranches counts twice) |
+
+Still open: one month of Aham's own Excel to match to two decimals, the financial-year start, and whether a finalised
+report must be locked.
 
 ## Where it lives
 | Part | File |
@@ -45,7 +80,7 @@ upload is kept in the upload history (`ImportBatch`, kind `disbursement`) and in
 | Branch (code or name) | yes | Branch name, Branch code |
 | Disbursed amount (₹, > 0) | yes | Disbursement amount, Amount disbursed, Disbursed amount (Rs), Amount |
 | Tenure in months | column yes, value may be empty | Tenure, Loan tenure, Tenor |
-| ROI % | column yes, value may be empty | ROI, Rate of interest, Interest rate, Transaction IRR, IRR |
+| ROI % | column yes, value may be empty | ROI, Rate of interest, Interest rate, Rate. **Not** "Transaction IRR" or "IRR": in Aham's process note that is amount × tenure × rate; a file with only that column is refused and told why |
 | Status | no | Disbursement status, Loan status |
 | Customer name | no | Customer, Borrower name, Applicant name |
 
@@ -63,10 +98,10 @@ Every table endpoint takes `format=csv` or `format=xlsx` to download.
 
 | Endpoint | What |
 |---|---|
-| `GET /report` | Today / Month / Year to date: `as_of` (default: latest disbursement the user can see, else today), `product` HL\|NHL, `level` branch\|region\|company, `region_id`, `branch_id`. Rows with accounts and IRR per period, the total, warnings, open exceptions per period |
-| `GET /report/month-by-product` | HL & NHL month to date: HL accounts, HL IRR, NHL accounts, NHL IRR per row and in total |
-| `GET /detail` | The loans behind a figure (paged): account, date, branch, region, product, class, amount, tenure, ROI, weight, weight × ROI, with the sums that give the IRR |
-| `GET /reconciliation` | For a period: rows uploaded, included, excluded, exceptions, amount and accounts by branch, by region and for the company, each summed separately, with checks that they agree; and the **year to date month by month** (numerator Σ amount × tenure × ROI and denominator Σ amount × tenure per month) with the BRD's YTD check: the year's figures equal the sum of its months, for the financial year of the period's end, in the same scope and product |
+| `GET /report` | TD / MTD / YTD (for the day, month to date, year to date): `as_of` (default: latest disbursement the user can see, else today), `product` HL\|NHL, `level` branch\|region\|company, `region_id`, `branch_id`. Rows with No. (disbursements) and IRR per period, the total, warnings, open exceptions per period |
+| `GET /report/month-by-product` | HL & NHL month to date: HL No., HL IRR, NHL No., NHL IRR per row and in total (each class worked out on its own) |
+| `GET /detail` | The disbursements behind a figure (paged), for one `product` (default HL): account, date, branch, region, product, class, amount, tenure, ROI, Transaction IRR, with the sums that give the IRR (rows, amount, Σ tenure, average tenure, denominator, Σ Transaction IRR) |
+| `GET /reconciliation` | For a period and one `product` (default HL): rows uploaded, included, excluded, exceptions, amount and average tenure by branch, by region and for the company, each worked out separately, with checks that they agree; and the **year to date month by month** (rows, amount, average tenure, denominator Σ amount × average tenure and numerator Σ Transaction IRR per month) with the BRD's YTD check: the year's rows, amounts, tenures and Transaction IRR equal the sum of its months, for the financial year of the period's end, in the same scope and product |
 | `GET /exceptions`, `PATCH /exceptions/{id}` | Disbursements left out for missing / zero / negative tenure or ROI; correcting them (audited) brings them in |
 | `GET /settings`, `PUT /settings` | Product mapping, expected ranges, financial-year start month, decimals |
 | `POST /disbursements`, `GET /disbursements/template`, `GET /uploads` | Upload (with `dry_run`), template, history |
@@ -87,10 +122,10 @@ region, everyone else the company. Callers, Sales Officers, the Master owner and
 The client has not answered these yet; the app does the following. Items marked **(setting)** can be changed under
 IRR settings without a code change.
 
-1. **Rate** = the ROI column of the register (the BRD's "transaction IRR"), as uploaded.
-2. **Tranches**: each disbursement row is its own record, weighted by its own amount and the tenure on the row.
-   Number of accounts = distinct loan account numbers in the group and period (an account with tranches in two months
-   counts once in YTD and once in each MTD).
+1. **Rate** = the ROI (rate of interest) column of the register, as uploaded. Aham's process note (12 Nov) calls
+   amount × tenure × rate the "Transaction IRR", so a column with that name is never read as the rate.
+2. **Tranches**: each disbursement row is its own record, with its own amount and the tenure on the row, and counts
+   in "No." and in the average tenure once per row (Aham, 12 Nov 2026): a loan paid in two tranches counts twice.
 3. **Product → HL / NHL** through the product mapping **(setting)**. Seeded: Home Loan → HL; LAP and Loan Against
    Property → NHL. A row with a product that is not mapped is a row error that says to add it in IRR settings.
 4. **Tenure** is in months, as in the register.
@@ -125,8 +160,8 @@ Further choices made while building (also to confirm):
 20. The duplicate key depends on whether a reference is given: if a register first uploaded **without** the reference
     column is later uploaded **with** it, the same disbursements get new keys and would be counted twice. Keep the
     same columns across uploads.
-21. In reconciliation, branch account counts can add up to more than the company count only if one loan account has
-    disbursements in two branches; amounts, record counts and the IRR sums always agree.
+21. In reconciliation, rows, amounts, tenures and Transaction IRR always add up from branches to regions to the
+    company and from months to the year; the denominator and the IRR are worked out for each group and never added.
 
 ## Upload size
 A register file can be up to 10 MB (CSV or Excel); `limit_body_size` in `backend/app/main.py` allows it for

@@ -29,7 +29,8 @@ COLUMNS: dict[str, list[str]] = {
                "disbursal amount", "amount disbursed", "disb amount", "disbursed amt", "amount"],
     "tenure": ["tenure in months", "tenure months", "tenure", "loan tenure", "loan tenure months",
                "loan tenure in months", "tenor", "tenor months", "tenor in months", "tenure mths", "term months"],
-    "roi": ["roi", "roi percent", "roi pct", "rate of interest", "interest rate", "transaction irr", "irr", "rate"],
+    # never "Transaction IRR" or "IRR": in Aham's process note that is amount x tenure x rate, not the rate
+    "roi": ["roi", "roi percent", "roi pct", "rate of interest", "interest rate", "rate"],
     "status": ["status", "disbursement status", "loan status"],
     "customer_name": ["customer name", "customer", "borrower name", "applicant name", "name"],
 }
@@ -87,6 +88,19 @@ def column_map(labels: list[str]) -> dict[str, list[str]]:
 
 def missing_columns(cols: dict[str, list[str]]) -> list[str]:
     return [LABELS[f] for f in REQUIRED if not cols.get(f)]
+
+
+# Headings that look like the rate but are not (Aham's process note, 12 Nov 2026: Transaction IRR = amount x tenure x rate)
+NOT_THE_RATE = ("transaction irr", "irr")
+
+
+def rate_hint(labels: list[str], missing: list[str]) -> str:
+    """When the rate column is missing but the file has a Transaction IRR column, say why it is not used."""
+    if LABELS["roi"] not in missing:
+        return ""
+    odd = [h for h in labels if norm_header(h) in NOT_THE_RATE]
+    return (f" '{odd[0]}' is not read as the rate: Transaction IRR is the disbursed amount × tenure × rate of interest. "
+            f"Add the rate of interest column ({LABELS['roi']}).") if odd else ""
 
 
 def shown(v: Any) -> str:

@@ -8,8 +8,8 @@ import { ExportButtons, fmtDay, fmtIrr, fmtNum, RowError, RowErrors, saveCsv } f
 interface Summary { rows: number; new: number; replaced: number; excluded: number; exceptions: number; errors: number }
 interface Result { dry_run: boolean; summary: Summary; errors: RowError[]; columns: Record<string, string>; batch_id?: string }
 interface Batch { id: string; filename: string; uploaded_by: string; created_at: string; rows_total: number; rows_error: number; summary: Summary | null; errors: RowError[] }
-interface ReconRow { label: string; code?: string; region?: string; rows: number; included: number; excluded: number; exceptions: number; amount: number; accounts: number; irr: number | null }
-type MonthRow = ReconRow & { weight: number; weighted_roi: number }
+interface ReconRow { label: string; code?: string; region?: string; rows: number; included: number; excluded: number; exceptions: number; amount: number; average_tenure: number | null; irr: number | null }
+type MonthRow = ReconRow & { tenure: number; denominator: number; weighted_roi: number }
 interface Recon { from: string; to: string; decimals: number; branches: ReconRow[]; regions: ReconRow[]; total: ReconRow; months: MonthRow[]; year: MonthRow; checks: { name: string; ok: boolean; detail: string }[] }
 
 const SUMMARY: [keyof Summary, string][] = [
@@ -97,8 +97,8 @@ function History() {
 
 function Reconciliation() {
   const [range, setRange] = useState({ from: firstOfMonth(), to: today() })
-  const [product, setProduct] = useState('')
-  const params = { date_from: range.from, date_to: range.to, product: product || undefined }
+  const [product, setProduct] = useState<'HL' | 'NHL'>('HL')  // HL and NHL are never added together
+  const params = { date_from: range.from, date_to: range.to, product }
   const { data, error } = useQuery({
     queryKey: ['irr', 'reconciliation', params], enabled: !!range.from && !!range.to,
     queryFn: async () => (await api.get<Recon>('/irr/reconciliation', { params })).data,
@@ -107,18 +107,18 @@ function Reconciliation() {
     <>
       <Td className="tabular text-right">{r.rows}</Td><Td className="tabular text-right">{r.included}</Td><Td className="tabular text-right">{r.excluded}</Td>
       <Td className={cx('tabular text-right', r.exceptions > 0 && 'text-amber-700')}>{r.exceptions}</Td>
-      <Td className="tabular text-right">{fmtNum(r.amount)}</Td><Td className="tabular text-right">{r.accounts}</Td>
+      <Td className="tabular text-right">{fmtNum(r.amount)}</Td><Td className="tabular text-right">{fmtNum(r.average_tenure)}</Td>
       <Td className={cx('tabular text-right', strong && 'font-semibold')}>{fmtIrr(r.irr, data?.decimals)}</Td>
     </>
   )
   return (
     <Card title="Reconciliation" className="mt-6" flush
-      subtitle="What was uploaded for the period and what the IRR uses. Branch, region and company totals are each worked out from the disbursements, so they must agree."
+      subtitle="What was uploaded for the period and what the IRR uses, for one product (HL and NHL are never added together). Branch, region and company totals are each worked out from the disbursements, so they must agree."
       actions={<ExportButtons url="/irr/reconciliation" params={params} name={`irr_reconciliation_${range.from}_${range.to}`} />}>
       <div className="flex flex-wrap items-end gap-3 px-5 pb-4">
         <label className="text-xs text-slate-500">Disbursed from<Input type="date" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} /></label>
         <label className="text-xs text-slate-500">to<Input type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} /></label>
-        <label className="text-xs text-slate-500">Product<Select value={product} onChange={(e) => setProduct(e.target.value)}><option value="">HL and NHL</option><option value="HL">HL</option><option value="NHL">NHL</option></Select></label>
+        <label className="text-xs text-slate-500">Product<Select value={product} onChange={(e) => setProduct(e.target.value as 'HL' | 'NHL')}><option value="HL">HL</option><option value="NHL">NHL</option></Select></label>
         {data?.checks.map((c) => (
           <span key={c.name} className={cx('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium', c.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-roof-50 text-roof-700')}>
             {c.ok ? <CheckCircle2 size={14} aria-hidden="true" /> : <TriangleAlert size={14} aria-hidden="true" />}{c.name}: {c.detail}
@@ -127,7 +127,7 @@ function Reconciliation() {
       </div>
       <div className="px-5"><ErrorBox error={error ? errorMessage(error) : null} /></div>
       {data && (
-        <Table head={['Branch / region', 'Rows uploaded', 'Included', 'Excluded', 'Exceptions', 'Included amount (₹)', 'Number of loan accounts', 'Weighted average IRR (%)']}>
+        <Table head={['Branch / region', 'Rows uploaded', 'Included', 'Excluded', 'Exceptions', 'Included amount (₹)', 'Average tenure (months)', 'Weighted average IRR (%)']}>
           {data.branches.map((r) => <tr key={`b-${r.label}`}><Td>{r.label} <span className="text-xs text-slate-500">{r.code} · {r.region}</span></Td>{line(r)}</tr>)}
           {data.regions.map((r) => <tr key={`r-${r.label}`} className="bg-slate-50/60"><Td className="font-medium">Region: {r.label}</Td>{line(r)}</tr>)}
           <tr className="bg-slate-50"><Td className="font-semibold text-brand-900">{data.total.label}</Td>{line(data.total, true)}</tr>
@@ -137,12 +137,12 @@ function Reconciliation() {
       {data && data.months.length > 0 && (
         <div className="border-t border-slate-100 pt-3">
           <p className="px-5 text-sm font-semibold text-brand-900">Year to date, month by month</p>
-          <p className="px-5 pb-2 text-xs text-slate-500">The year's numerator (Σ amount × tenure × ROI) and denominator (Σ amount × tenure) must equal the sum of the months. A loan disbursed in tranches in two months counts once in the year, so loan accounts do not add up.</p>
-          <Table head={['Month', 'Included rows', 'Included amount (₹)', 'Number of loan accounts', 'Denominator: Σ amount × tenure', 'Numerator: Σ amount × tenure × ROI', 'Weighted average IRR (%)']} exportName="IRR year to date by month">
+          <p className="px-5 pb-2 text-xs text-slate-500">The year's rows, amount, tenures and numerator (Σ Transaction IRR = amount × tenure × ROI) must equal the sum of the months. The denominator is the amount × the average tenure of the whole period, so the year's denominator is not the sum of the months', and the year's IRR is not an average of the months'.</p>
+          <Table head={['Month', 'Included rows', 'Included amount (₹)', 'Average tenure (months)', 'Denominator: Σ amount × average tenure', 'Numerator: Σ Transaction IRR', 'Weighted average IRR (%)']} exportName="IRR year to date by month">
             {[...data.months, data.year].map((m, i) => (
               <tr key={m.label} className={cx(i === data.months.length && 'bg-slate-50 font-semibold')}>
                 <Td>{m.label}</Td><Td className="tabular text-right">{m.included}</Td><Td className="tabular text-right">{fmtNum(m.amount)}</Td>
-                <Td className="tabular text-right">{m.accounts}</Td><Td className="tabular text-right">{fmtNum(m.weight)}</Td><Td className="tabular text-right">{fmtNum(m.weighted_roi)}</Td>
+                <Td className="tabular text-right">{fmtNum(m.average_tenure)}</Td><Td className="tabular text-right">{fmtNum(m.denominator)}</Td><Td className="tabular text-right">{fmtNum(m.weighted_roi)}</Td>
                 <Td className="tabular text-right">{fmtIrr(m.irr, data.decimals)}</Td>
               </tr>
             ))}

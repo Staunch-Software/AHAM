@@ -1,6 +1,6 @@
 """Weighted average IRR for Home Loans (HL) and Non-Home Loans / LAP (NHL), from the Disbursement Register.
 
-Uploads (MIS), the two report layouts (Today / Month / Year to date, and HL & NHL month to date), the loan-level detail
+Uploads (MIS), the two report layouts (TD / MTD / YTD, and HL & NHL month to date), the loan-level detail
 behind any figure, reconciliation, exceptions and settings. The formula is in app.services.irr.calc; this module only
 reads and writes. Every list is cut to the user's branches (app.services.scope), and every table can be downloaded
 with format=csv or format=xlsx.
@@ -141,9 +141,10 @@ def _rows_for(level: str, scope: Scope, region_id: uuid.UUID | None, branch_id: 
 
 
 def _cell(g: calc.Group | None, decimals: int) -> dict:
+    """"No." (records: disbursement rows, so a loan in two tranches counts twice), the IRR and the amount."""
     if g is None or not g.records:
-        return {"accounts": 0, "irr": None, "amount": 0.0, "records": 0}
-    return {"accounts": g.accounts, "irr": _pct(g.irr, decimals), "amount": float(g.amount), "records": g.records}
+        return {"records": 0, "irr": None, "amount": 0.0}
+    return {"records": g.records, "irr": _pct(g.irr, decimals), "amount": float(g.amount)}
 
 
 def _warn(label: str, where: str, product: str, g: calc.Group | None, cfg: IrrConfig) -> str | None:
@@ -160,13 +161,13 @@ def _key_fn(level: str):
     return {"branch": lambda x: x.branch_id, "region": lambda x: x.region_id, "company": None}[level]
 
 
-# ---------------------------------------------------------------- report 1: Today / Month / Year to date
+# ---------------------------------------------------------------- report 1: TD / MTD / YTD (for the day, month, year to date)
 @router.get("/report")
 async def report(as_of: date | None = None, product: Product = "HL", level: Level = "branch",
                  region_id: uuid.UUID | None = None, branch_id: uuid.UUID | None = None, format: Fmt | None = None,
                  user: User = Depends(require_perm("irr.view")), s: AsyncSession = Depends(get_session)):
-    """Number of loan accounts and weighted average IRR for TD, MTD and YTD of one product class, per branch, region
-    or for the company. The total row is worked out from the loans themselves, never from the rows above it."""
+    """Number of disbursements and weighted average IRR for TD, MTD and YTD of one product class, per branch, region
+    or for the company. The total row is worked out from the disbursements themselves, never from the rows above it."""
     cfg = await load_config(s, user.company_id)
     scope = await _scope(s, user, region_id, branch_id)
     day = await _as_of(s, user, scope, as_of)
@@ -197,14 +198,14 @@ async def report(as_of: date | None = None, product: Product = "HL", level: Leve
     if format:
         first = {"branch": ["Branch code", "Branch", "Region"], "region": ["Region"], "company": ["Scope"]}[level]
         header = first + [f"{calc.PERIOD_LABELS[p]}: {h}" for p in calc.PERIODS
-                          for h in ("Number of loan accounts", "Weighted average IRR (%)")]
+                          for h in ("Number of disbursements", "Weighted average IRR (%)")]
 
         def line(r: dict, total_row: bool = False) -> list:
             lead = {"branch": [r.get("code", ""), r["label"], r.get("region", "")], "region": [r["label"]],
                     "company": [r["label"]]}[level]
             if total_row and level == "branch":
                 lead = ["", r["label"], ""]
-            return lead + [x for p in calc.PERIODS for x in (r["periods"][p]["accounts"], r["periods"][p]["irr"])]
+            return lead + [x for p in calc.PERIODS for x in (r["periods"][p]["records"], r["periods"][p]["irr"])]
 
         body = [line(r) for r in rows] + ([line(tot, True)] if level != "company" else [])
         return _file(format, f"irr_{product}_{level}_{day}", header, body, f"{product} IRR {day}")
@@ -222,7 +223,8 @@ async def report(as_of: date | None = None, product: Product = "HL", level: Leve
 async def month_by_product(as_of: date | None = None, level: Level = "branch", region_id: uuid.UUID | None = None,
                            branch_id: uuid.UUID | None = None, format: Fmt | None = None,
                            user: User = Depends(require_perm("irr.view")), s: AsyncSession = Depends(get_session)):
-    """Month to date, HL next to NHL: number of loan accounts and weighted average IRR of each, per row and in total."""
+    """Month to date, HL next to NHL: number of disbursements and weighted average IRR of each, per row and in total.
+    The two classes are worked out separately; there is no HL + NHL figure."""
     cfg = await load_config(s, user.company_id)
     scope = await _scope(s, user, region_id, branch_id)
     day = await _as_of(s, user, scope, as_of)
@@ -254,12 +256,12 @@ async def month_by_product(as_of: date | None = None, level: Level = "branch", r
     if format:
         first = {"branch": ["Branch code", "Branch", "Region"], "region": ["Region"], "company": ["Scope"]}[level]
         header = first + [f"{c}: {h}" for c in calc.CLASSES
-                          for h in ("Number of loan accounts", "Weighted average IRR (%)")]
+                          for h in ("Number of disbursements", "Weighted average IRR (%)")]
         body = []
         for r in rows + ([tot] if level != "company" else []):
             lead = {"branch": [r.get("code", ""), r["label"], r.get("region", "")], "region": [r["label"]],
                     "company": [r["label"]]}[level]
-            body.append(lead + [x for c in calc.CLASSES for x in (r["classes"][c]["accounts"], r["classes"][c]["irr"])])
+            body.append(lead + [x for c in calc.CLASSES for x in (r["classes"][c]["records"], r["classes"][c]["irr"])])
         return _file(format, f"irr_HL_NHL_MTD_{level}_{day}", header, body, f"HL NHL MTD {day}")
     return {
         "as_of": day, "level": level, "decimals": cfg.decimals, "period": {"from": bounds["MTD"][0], "to": day},
@@ -271,27 +273,26 @@ async def month_by_product(as_of: date | None = None, level: Level = "branch", r
 # ---------------------------------------------------------------- loan-level detail (audit)
 DETAIL_HEADER = ["Loan account number", "Disbursement reference", "Disbursement date", "Branch code", "Branch",
                  "Region", "Product", "Product class", "Disbursed amount (₹)", "Tenure (months)", "ROI (%)",
-                 "Weight (amount × tenure)", "Amount × tenure × ROI"]
+                 "Transaction IRR (amount × tenure × ROI)"]
 
 
 @router.get("/detail")
-async def detail(as_of: date | None = None, period: Period = "MTD", product: Product | None = None,
+async def detail(as_of: date | None = None, period: Period = "MTD", product: Product = "HL",
                  region_id: uuid.UUID | None = None, branch_id: uuid.UUID | None = None,
                  page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=500), format: Fmt | None = None,
                  user: User = Depends(require_perm("irr.view")), s: AsyncSession = Depends(get_session)):
-    """The disbursements behind a report figure, with each one's weight and product, so the IRR can be checked by
-    hand: sum of "Amount × tenure × ROI" divided by sum of "Weight"."""
+    """The disbursements behind a report figure, each with its Transaction IRR, and the sums that give the IRR, so it
+    can be checked by hand: sum of "Transaction IRR" ÷ (sum of amount × average tenure). One product class at a time,
+    since HL and NHL are never added together."""
     cfg = await load_config(s, user.company_id)
     scope = await _scope(s, user, region_id, branch_id)
     day = await _as_of(s, user, scope, as_of)
     first, last = calc.period_bounds(day, cfg.fy_start_month)[period]
-    where = [*scope.conds, *ELIGIBLE, Disbursement.disbursement_date >= first, Disbursement.disbursement_date <= last]
-    if product:
-        where.append(Disbursement.product_class == product)
-    weight = Disbursement.amount * Disbursement.tenure_months
-    sums = (await s.execute(select(func.count(), func.count(func.distinct(Disbursement.loan_account)),
-                                   func.coalesce(func.sum(Disbursement.amount), 0), func.coalesce(func.sum(weight), 0),
-                                   func.coalesce(func.sum(weight * Disbursement.roi), 0)).where(*where))).one()
+    where = [*scope.conds, *ELIGIBLE, Disbursement.disbursement_date >= first, Disbursement.disbursement_date <= last,
+             Disbursement.product_class == product]
+    sums = (await s.execute(select(
+        func.count(), func.coalesce(func.sum(Disbursement.amount), 0), func.coalesce(func.sum(Disbursement.tenure_months), 0),
+        func.coalesce(func.sum(Disbursement.amount * Disbursement.tenure_months * Disbursement.roi), 0)).where(*where))).one()
     q = select(Disbursement).where(*where).order_by(Disbursement.disbursement_date, Disbursement.loan_account,
                                                     Disbursement.disbursement_ref)
     if not format:
@@ -304,39 +305,40 @@ async def detail(as_of: date | None = None, period: Period = "MTD", product: Pro
                       "disbursement_date": d.disbursement_date, "branch_code": code, "branch": name,
                       "region": scope.region_label(d.region_id), "product": d.product,
                       "product_class": d.product_class, "amount": d.amount, "tenure_months": d.tenure_months,
-                      "roi": d.roi, "weight": loan.weight, "weighted_roi": loan.product})
+                      "roi": d.roi, "weighted_roi": loan.product})
     if format:
         body = [[i["loan_account"], i["disbursement_ref"], i["disbursement_date"].strftime("%d-%m-%Y"),
                  i["branch_code"], i["branch"], i["region"], i["product"], i["product_class"], i["amount"],
-                 i["tenure_months"], i["roi"], i["weight"], i["weighted_roi"]] for i in items]
-        return _file(format, f"irr_loans_{period}_{product or 'HL_NHL'}_{day}", DETAIL_HEADER, body, f"Loans {period}")
-    records, accounts, amount, w_sum, p_sum = sums
-    irr = Decimal(p_sum) / Decimal(w_sum) if w_sum else None
+                 i["tenure_months"], i["roi"], i["weighted_roi"]] for i in items]
+        return _file(format, f"irr_loans_{period}_{product}_{day}", DETAIL_HEADER, body, f"Loans {period}")
+    records, amount, tenure, p_sum = sums
     return {
         "as_of": day, "period": period, "from": first, "to": last, "product": product, "decimals": cfg.decimals,
         "total": records, "page": page, "page_size": page_size,
-        "items": [{**i, **{k: _num(i[k]) for k in ("amount", "tenure_months", "roi", "weight", "weighted_roi")}}
-                  for i in items],
-        "totals": {"records": records, "accounts": accounts, "amount": _num(Decimal(amount)),
-                   "weight": _num(Decimal(w_sum)), "weighted_roi": _num(Decimal(p_sum)),
-                   "irr": _pct(irr, cfg.decimals)},
+        "items": [{**i, **{k: _num(i[k]) for k in ("amount", "tenure_months", "roi", "weighted_roi")}} for i in items],
+        "totals": {"records": records, "amount": _num(Decimal(amount)), "tenure": _num(Decimal(tenure)),
+                   "average_tenure": _num(calc.average_tenure(tenure, records)),
+                   "denominator": _num(calc.denominator(amount, tenure, records)), "weighted_roi": _num(Decimal(p_sum)),
+                   "irr": _pct(calc.irr_of(p_sum, amount, tenure, records), cfg.decimals)},
     }
 
 
 # ---------------------------------------------------------------- reconciliation
 RECON_HEADER = ["Level", "Branch code", "Name", "Region", "Rows uploaded", "Included", "Excluded (cancelled / reversed)",
-                "Exceptions (open)", "Included amount (₹)", "Number of loan accounts", "Weighted average IRR (%)"]
+                "Exceptions (open)", "Included amount (₹)", "Average tenure (months)", "Weighted average IRR (%)"]
 
 
 @router.get("/reconciliation")
-async def reconciliation(date_from: date | None = None, date_to: date | None = None, product: Product | None = None,
+async def reconciliation(date_from: date | None = None, date_to: date | None = None, product: Product = "HL",
                          region_id: uuid.UUID | None = None, branch_id: uuid.UUID | None = None,
                          format: Fmt | None = None, user: User = Depends(require_perm("irr.view")),
                          s: AsyncSession = Depends(get_session)):
-    """What was uploaded for a period and what the IRR uses, by branch, by region and for the company, each worked
-    out separately from the disbursement rows; the checks say whether branch totals = region totals = company total,
-    and whether the year to date equals the sum of its months (BRD section 6, for the financial year of the period's
-    end, in the same scope and product). Default period: month to date of the latest disbursement."""
+    """What was uploaded for a period and what the IRR uses, for one product class (HL and NHL are never added
+    together), by branch, by region and for the company, each worked out separately from the disbursement rows. The
+    checks say whether branch totals = region totals = company total, and whether the year to date equals the sum of
+    its months (BRD section 6, for the financial year of the period's end, in the same scope and product): the rows,
+    amounts, tenures and Transaction IRRs add up. The denominator does not (it is the amount × the average tenure of
+    the whole group), so it is never added. Default period: month to date of the latest disbursement."""
     cfg = await load_config(s, user.company_id)
     scope = await _scope(s, user, region_id, branch_id)
     last = date_to or await _as_of(s, user, scope, None)
@@ -344,48 +346,46 @@ async def reconciliation(date_from: date | None = None, date_to: date | None = N
     if first > last:
         raise HTTPException(422, "The start date is after the end date")
     D = Disbursement
-    where = [*scope.conds, D.disbursement_date >= first, D.disbursement_date <= last]
-    if product:
-        where.append(D.product_class == product)
+    where = [*scope.conds, D.disbursement_date >= first, D.disbursement_date <= last, D.product_class == product]
     ok = (D.excluded.is_(False), D.exception.is_(None))
-    weight = D.amount * D.tenure_months
     cols = (func.count(), func.count().filter(*ok), func.count().filter(D.excluded.is_(True)),
             func.count().filter(*OPEN_EXCEPTION), func.coalesce(func.sum(D.amount).filter(*ok), 0),
-            func.count(func.distinct(D.loan_account)).filter(*ok), func.coalesce(func.sum(weight).filter(*ok), 0),
-            func.coalesce(func.sum(weight * D.roi).filter(*ok), 0))
+            func.coalesce(func.sum(D.tenure_months).filter(*ok), 0),
+            func.coalesce(func.sum(D.amount * D.tenure_months * D.roi).filter(*ok), 0))
 
     def block(r) -> dict:
-        n, inc, exc, ex, amt, acc, w, p = r
+        n, inc, exc, ex, amt, ten, p = r
         return {"rows": n, "included": inc, "excluded": exc, "exceptions": ex, "amount": Decimal(amt),
-                "accounts": acc, "weight": Decimal(w), "weighted_roi": Decimal(p),
-                "irr": Decimal(p) / Decimal(w) if w else None}
+                "tenure": Decimal(ten), "weighted_roi": Decimal(p), "irr": calc.irr_of(p, amt, ten, inc),
+                "average_tenure": calc.average_tenure(ten, inc), "denominator": calc.denominator(amt, ten, inc)}
 
     by_branch = [(bid, block(r)) for bid, *r in (await s.execute(select(D.branch_id, *cols).where(*where)
                                                                  .group_by(D.branch_id))).all()]
     by_region = [(rid, block(r)) for rid, *r in (await s.execute(select(D.region_id, *cols).where(*where)
                                                                  .group_by(D.region_id))).all()]
     company = block((await s.execute(select(*cols).where(*where))).one())
-    fields = ("rows", "included", "excluded", "exceptions", "amount", "weight", "weighted_roi")
+    fields = ("rows", "included", "excluded", "exceptions", "amount", "tenure", "weighted_roi")  # all add up
     checks = []
     for name, parts in (("Branch totals = company total", by_branch), ("Region totals = company total", by_region)):
         diffs = [f for f in fields if sum((b[f] for _, b in parts), Decimal(0)) != company[f]]
         checks.append({"name": name, "ok": not diffs,
                        "detail": "All figures agree" if not diffs else f"Different: {', '.join(diffs)}"})
-    # YTD validation: the year's numerator and denominator, worked out at once, against the sum of each month's
+    # YTD validation: the year's rows, amount, tenures and Transaction IRR, worked out at once, against the sum of
+    # each month's
     fy_start = calc.period_bounds(last, cfg.fy_start_month)["YTD"][0]
-    year_where = [*scope.conds, D.disbursement_date >= fy_start, D.disbursement_date <= last,
-                  *([D.product_class == product] if product else [])]
+    year_where = [*scope.conds, D.disbursement_date >= fy_start, D.disbursement_date <= last, D.product_class == product]
     month = func.date_trunc("month", D.disbursement_date)
     by_month = [(m.date() if hasattr(m, "date") else m, block(r)) for m, *r in (await s.execute(
         select(month, *cols).where(*year_where).group_by(month).order_by(month))).all()]
     year = block((await s.execute(select(*cols).where(*year_where))).one())
     diffs = [f for f in fields if sum((b[f] for _, b in by_month), Decimal(0)) != year[f]]
     checks.append({"name": f"Year to date ({fy_start:%d-%m-%Y} to {last:%d-%m-%Y}) = sum of its months", "ok": not diffs,
-                   "detail": "Numerator and denominator agree" if not diffs else f"Different: {', '.join(diffs)}"})
+                   "detail": "Rows, amounts, tenures and Transaction IRR agree" if not diffs
+                   else f"Different: {', '.join(diffs)}"})
 
     def out(b: dict) -> dict:
-        return {**{k: b[k] for k in ("rows", "included", "excluded", "exceptions", "accounts")},
-                "amount": _num(b["amount"]), "irr": _pct(b["irr"], cfg.decimals)}
+        return {**{k: b[k] for k in ("rows", "included", "excluded", "exceptions")}, "amount": _num(b["amount"]),
+                "average_tenure": _num(b["average_tenure"]), "irr": _pct(b["irr"], cfg.decimals)}
 
     branches = sorted(({"branch_id": str(bid), "code": scope.branch_label(bid)[0], "label": scope.branch_label(bid)[1],
                         "region": scope.region_label(scope.branches[bid].region_id) if bid in scope.branches else "",
@@ -393,14 +393,15 @@ async def reconciliation(date_from: date | None = None, date_to: date | None = N
     regions = sorted(({"region_id": str(rid) if rid else None, "label": scope.region_label(rid), **out(b)}
                       for rid, b in by_region), key=lambda r: r["label"])
     total = {"label": "Company total" if scope.company_wide else "Total", **out(company)}
-    months = [{"label": f"{m:%b %Y}", "month": m, "weight": _num(b["weight"]), "weighted_roi": _num(b["weighted_roi"]),
-               **out(b)} for m, b in by_month]
-    year_total = {"label": f"Year to date (from {fy_start:%d-%m-%Y})", "weight": _num(year["weight"]),
-                  "weighted_roi": _num(year["weighted_roi"]), **out(year)}
+    def sums(b: dict) -> dict:
+        return {"tenure": _num(b["tenure"]), "denominator": _num(b["denominator"]), "weighted_roi": _num(b["weighted_roi"])}
+
+    months = [{"label": f"{m:%b %Y}", "month": m, **sums(b), **out(b)} for m, b in by_month]
+    year_total = {"label": f"Year to date (from {fy_start:%d-%m-%Y})", **sums(year), **out(year)}
     if format:
         def line(level: str, code: str, r: dict, region: str = "") -> list:
             return [level, code, r["label"], region, r["rows"], r["included"], r["excluded"], r["exceptions"],
-                    r["amount"], r["accounts"], r["irr"]]
+                    r["amount"], r["average_tenure"], r["irr"]]
         body = ([line("Branch", r["code"], r, r["region"]) for r in branches]
                 + [line("Region", "", r) for r in regions] + [line("Company", "", total)]
                 + [line("Month", "", r) for r in months] + [line("Year to date", "", year_total)])
@@ -561,7 +562,8 @@ async def upload_register(file: UploadFile = File(...), dry_run: bool = Form(Fal
     if missing:
         found = ", ".join(f"'{h}'" for h in labels if h) or "none"
         raise HTTPException(422, f"Missing column{'s' if len(missing) > 1 else ''}: {', '.join(missing)}. "
-                                 f"Columns found in the file: {found}. Download the template for the expected headings.")
+                                 f"Columns found in the file: {found}.{register.rate_hint(labels, missing)} "
+                                 "Download the template for the expected headings.")
     if not rows:
         raise HTTPException(422, "The file has a heading row but no disbursements below it")
     cid = user.company_id

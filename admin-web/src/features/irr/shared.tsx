@@ -8,12 +8,13 @@ export type Period = 'TD' | 'MTD' | 'YTD'
 export type ProductClass = 'HL' | 'NHL'
 export type Level = 'branch' | 'region' | 'company'
 export const PERIODS: Period[] = ['TD', 'MTD', 'YTD']
-export const PERIOD_LABELS: Record<Period, string> = { TD: 'Today (TD)', MTD: 'Month to date (MTD)', YTD: 'Year to date (YTD)' }
+export const PERIOD_LABELS: Record<Period, string> = { TD: 'For the day (TD)', MTD: 'Month to date (MTD)', YTD: 'Year to date (YTD)' }
 export const CLASSES: ProductClass[] = ['HL', 'NHL']
 export const CLASS_LABELS: Record<ProductClass, string> = { HL: 'Home Loan (HL)', NHL: 'Non-Home Loan / LAP (NHL)' }
 export const LEVELS: { value: Level; label: string }[] = [{ value: 'branch', label: 'By branch' }, { value: 'region', label: 'By region' }, { value: 'company', label: 'Company' }]
 
-export interface Cell { accounts: number; irr: number | null; amount: number; records: number }
+/** records = "No.": disbursement rows, so a loan paid in two tranches counts twice. */
+export interface Cell { records: number; irr: number | null; amount: number }
 interface RowBase { label: string; code?: string; region?: string; branch_id?: string; region_id?: string | null; flags: string[] }
 export interface PeriodRow extends RowBase { periods: Record<Period, Cell> }
 export interface ClassRow extends RowBase { classes: Record<ProductClass, Cell> }
@@ -47,7 +48,7 @@ export function ExportButtons({ url, params, name }: { url: string; params: Reco
   )
 }
 
-/** A table whose columns come in named pairs (for example "Today (TD)" over accounts and IRR). */
+/** A table whose columns come in named pairs (for example "For the day (TD)" over No. and IRR). */
 export function GroupedTable({ lead, groups, children }: { lead: string[]; groups: { label: string; cols: string[] }[]; children: ReactNode }) {
   const th = 'border-y border-slate-200 px-4 py-2.5'
   return (

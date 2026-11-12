@@ -17,24 +17,24 @@ function signIn(role: string, irrPerms: string[], extra: Record<string, unknown>
   handlers.get = (url, cfg) => (url === '/auth/me' ? { data: { ...me, permissions: [...me.permissions, ...irrPerms] } } : base(url, cfg))
 }
 
-const cell = (accounts: number, irr: number | null) => ({ accounts, irr, amount: 0, records: accounts })
+const cell = (records: number, irr: number | null) => ({ records, irr, amount: 0 })
 const REPORT = {
   as_of: '2026-11-05', product: 'HL', level: 'branch', decimals: 2, band: null, warnings: [],
   periods: { TD: { from: '2026-11-05', to: '2026-11-05' }, MTD: { from: '2026-11-01', to: '2026-11-05' }, YTD: { from: '2026-04-01', to: '2026-11-05' } },
   rows: [
-    { branch_id: 'b1', region_id: 'r1', code: 'B1', label: 'Vijayawada', region: 'AP & TG', flags: [], periods: { TD: cell(2, 9.12), MTD: cell(2, 9.12), YTD: cell(2, 9.09) } },
+    { branch_id: 'b1', region_id: 'r1', code: 'B1', label: 'Vijayawada', region: 'AP & TG', flags: [], periods: { TD: cell(2, 13.03), MTD: cell(2, 13.03), YTD: cell(3, 11.11) } },
     { branch_id: 'b2', region_id: 'r1', code: 'B2', label: 'Guntur', region: 'AP & TG', flags: [], periods: { TD: cell(0, null), MTD: cell(0, null), YTD: cell(0, null) } },
   ],
-  total: { label: 'Company total', flags: [], periods: { TD: cell(2, 9.12), MTD: cell(3, 9.24), YTD: cell(3, 9.19) } },
+  total: { label: 'Company total', flags: [], periods: { TD: cell(2, 13.03), MTD: cell(3, 12.76), YTD: cell(4, 11.24) } },
   open_exceptions: { TD: 1, MTD: 1, YTD: 1 },
 }
 const DETAIL = {
   as_of: '2026-11-05', period: 'MTD', from: '2026-11-01', to: '2026-11-05', decimals: 2, total: 2, page: 1, page_size: 25,
-  items: [{ id: 'd1', loan_account: 'HLA', disbursement_ref: '1', disbursement_date: '2026-11-05', branch: 'Vijayawada', branch_code: 'B1', region: 'AP & TG', product: 'Home Loan', product_class: 'HL', amount: 3000000, tenure_months: 240, roi: 9, weight: 720000000, weighted_roi: 6480000000 }],
-  totals: { records: 2, accounts: 2, amount: 3500000, weight: 750000000, weighted_roi: 6840000000, irr: 9.12 },
+  items: [{ id: 'd1', loan_account: 'HLA', disbursement_ref: '1', disbursement_date: '2026-11-05', branch: 'Vijayawada', branch_code: 'B1', region: 'AP & TG', product: 'Home Loan', product_class: 'HL', amount: 3000000, tenure_months: 240, roi: 9, weighted_roi: 6480000000 }],
+  totals: { records: 2, amount: 3500000, tenure: 300, average_tenure: 150, denominator: 525000000, weighted_roi: 6840000000, irr: 13.03 },
 }
 
-test('the IRR report shows accounts and IRR per period, a dash when there is nothing, and opens the loans of a row', async () => {
+test('the IRR report shows No. and IRR per period, a dash when there is nothing, and opens the loans of a row', async () => {
   signIn('branch_manager', ['irr.view'], { '/irr/report': REPORT, '/irr/detail': DETAIL })
   renderApp('/manage/irr')
   const nav = await screen.findByRole('navigation', { name: 'Main' })
@@ -43,19 +43,26 @@ test('the IRR report shows accounts and IRR per period, a dash when there is not
   expect(within(row).getAllByText('–')).toHaveLength(3)  // no disbursements: no IRR, never 0%
   expect(within(row).queryByText(/0\.00/)).toBeNull()
   const total = screen.getByRole('button', { name: 'Loans of Company total' }).closest('tr')!
-  expect(within(total).getByText('9.24')).toBeInTheDocument()
-  for (const h of ['Today (TD)', 'Month to date (MTD)', 'Year to date (YTD)']) expect(screen.getByText(h)).toBeInTheDocument()
+  expect(within(total).getByText('12.76')).toBeInTheDocument()
+  expect(within(total).getByText('4')).toBeInTheDocument()  // No. counts disbursement rows
+  expect(screen.getAllByText('Number of disbursements')).toHaveLength(3)
+  for (const h of ['For the day (TD)', 'Month to date (MTD)', 'Year to date (YTD)']) expect(screen.getByText(h)).toBeInTheDocument()
   expect(screen.getAllByText('Weighted average IRR (%)')).toHaveLength(3)
-  expect(screen.getByText(/sum of \(disbursed amount × tenure in months × ROI\)/)).toBeInTheDocument()
+  expect(screen.getByText(/sum of Transaction IRR \(disbursed amount × that loan's tenure in months × ROI\) ÷ \(sum of disbursed amount × average tenure\)/)).toBeInTheDocument()
   expect(screen.getByText(/1 disbursement of this year to date is left out/)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Export as Excel' })).toBeInTheDocument()
 
   await userEvent.click(screen.getByRole('button', { name: 'Loans of Vijayawada' }))
   const dialog = await screen.findByRole('dialog')
   expect(await within(dialog).findByText('HLA')).toBeInTheDocument()
-  expect(within(dialog).getByTestId('detail-totals')).toHaveTextContent('Weighted average IRR 9.12%')
+  const totals = within(dialog).getByTestId('detail-totals')
+  expect(totals).toHaveTextContent('average tenure 150 months (300 ÷ 2)')
+  expect(totals).toHaveTextContent('Weighted average IRR 13.03% = 6,84,00,00,000 ÷ 52,50,00,000')
   const req = calls.filter((c) => c.url === '/irr/detail').at(-1)!
   expect(req.cfg.params).toMatchObject({ branch_id: 'b1', product: 'HL', period: 'MTD', as_of: '2026-11-05' })
+  // HL and NHL are never added together: the dialog switches product, it has no "both"
+  await userEvent.click(within(dialog).getByRole('button', { name: 'NHL' }))
+  await waitFor(() => expect(calls.filter((c) => c.url === '/irr/detail').at(-1)!.cfg.params).toMatchObject({ product: 'NHL' }))
 })
 
 test('upload problems are a table of row, column, value found and problem, with a download', async () => {
