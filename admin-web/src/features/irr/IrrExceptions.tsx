@@ -66,7 +66,7 @@ export default function IrrExceptions() {
         {isLoading ? <div className="space-y-2 p-5">{Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-10" />)}</div>
           : !data?.items.length ? <EmptyState icon={<ListChecks size={20} />} title={status === 'open' ? 'Nothing to correct: every uploaded disbursement has a tenure and ROI.' : 'Nothing here yet.'} />
             : (
-              <Table head={['Loan account', 'Date', 'Branch', 'Product', 'Amount (₹)', 'Tenure (months)', 'ROI (%)', 'Problem', '']}>
+              <Table head={['Loan account', 'Date', 'Branch', 'Product', 'Amount (₹)', 'Tenure (months)', 'ROI (%)', 'Problem', '']} maxHeight="max-h-[min(500px,62vh)]">
                 {data.items.map((i) => (
                   <tr key={i.id}>
                     <Td className="whitespace-nowrap font-medium text-slate-900">{i.loan_account}{i.disbursement_ref && <span className="ml-1 text-xs text-slate-500">#{i.disbursement_ref}</span>}</Td>

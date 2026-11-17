@@ -1,4 +1,4 @@
-﻿import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Award, BadgeCheck, Clock, IdCard, ListChecks, Target, UserCheck, Users } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -107,7 +107,7 @@ export default function Dashboard() {
             <StatCard label="Active Sales Officers" value={t.active_sos} icon={<Users size={20} />} hint={`${data.period.from} to ${data.period.to}`} />
           </div>
 
-          <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <Card title="Entries per day" subtitle="By count date (Sundays and holidays count on the next working day)"><Trend trend={data.trend} /></Card>
             <Card title="RAG" subtitle="Where the entries of this period stand now"><RagBar rag={data.rag} /></Card>
           </div>
@@ -162,7 +162,7 @@ export default function Dashboard() {
 
           <Card title="Branches" className="mt-6" flush>
             {data.branches.length === 0 ? <EmptyState icon={<ListChecks size={20} />} title="No entries in this period." /> : (
-              <Table head={['Branch', 'Region', 'Sales Officers', 'Entries', 'Lead / Prospect entries', 'Validated', 'Logged in', 'Green', 'Amber', 'Red']} exportName="Branches">
+              <Table head={['Branch', 'Region', 'Sales Officers', 'Entries', 'Lead / Prospect entries', 'Validated', 'Logged in', 'Green', 'Amber', 'Red']} exportName="Branches" maxHeight="max-h-[min(480px,60vh)]">
                 {data.branches.map((b) => (
                   <tr key={b.branch_id}>
                     <Td className="font-medium text-slate-900">{b.branch}</Td><Td>{b.region ?? '—'}</Td><Td className="tabular">{b.sos}</Td>

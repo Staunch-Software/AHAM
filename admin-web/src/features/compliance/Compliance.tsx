@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { BarChart3, Download } from 'lucide-react'
+import { BarChart3, Download, Search } from 'lucide-react'
 import { useState } from 'react'
 import { Button, Card, cx, EmptyState, ErrorBox, Input, PageTitle, Select, Skeleton, StatCard, Table, Td } from '../../components/ui'
 import { api, download, errorMessage } from '../../services/api'
@@ -31,35 +31,59 @@ export default function Compliance() {
   const shownBranches = branches?.filter((b) => !region || b.region_id === region)
   return (
     <>
-      <PageTitle subtitle="Entries counted on their count date. Joiners are N/A before their joining date; people who left are not listed after their exit date."
-        actions={<>
-          <Input type="date" aria-label="Day" value={day} onChange={(e) => setDay(e.target.value)} className="w-auto" />
-          {(regions?.length ?? 0) > 1 && (
-            <Select aria-label="Region" value={region} onChange={(e) => { setRegion(e.target.value); setBranch('') }} className="w-auto">
-              <option value="">All regions</option>{regions?.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </Select>
-          )}
-          <Select aria-label="Branch" value={branch} onChange={(e) => setBranch(e.target.value)} className="w-auto">
-            <option value="">All my branches</option>{shownBranches?.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </Select>
-          <Input aria-label="Search Sales Officer" placeholder="Name or Emp ID" value={q} onChange={(e) => setQ(e.target.value)} className="w-44" />
-        </>}>
+      <PageTitle subtitle="Entries counted on their count date. Joiners are N/A before their joining date; people who left are not listed after their exit date.">
         Daily compliance
       </PageTitle>
+
+      <div className="mb-4 flex items-center gap-2.5 sm:gap-3 rounded-2xl border border-slate-200/80 bg-white p-2.5 sm:p-3.5 shadow-card shrink-0">
+        <label className="relative flex-1 min-w-[160px]">
+          <span className="sr-only">Search</span>
+          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+          <Input
+            className="pl-9"
+            aria-label="Search Sales Officer"
+            placeholder="Name or Emp ID"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </label>
+        {(regions?.length ?? 0) > 1 && (
+          <div className="w-36 sm:w-44 shrink-0">
+            <Select aria-label="Region" value={region} onChange={(e) => { setRegion(e.target.value); setBranch('') }}>
+              <option value="">All regions</option>
+              {regions?.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </Select>
+          </div>
+        )}
+        <div className="w-40 sm:w-52 shrink-0">
+          <Select aria-label="Branch" value={branch} onChange={(e) => setBranch(e.target.value)}>
+            <option value="">All my branches</option>
+            {shownBranches?.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </Select>
+        </div>
+        <div className="w-36 sm:w-40 shrink-0">
+          <Input type="date" aria-label="Day" value={day} onChange={(e) => setDay(e.target.value)} />
+        </div>
+      </div>
+
       <ErrorBox error={error ? errorMessage(error) : null} />
       {data && (
-        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-4 sm:mb-5 grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4 shrink-0">
           <StatCard label="Sales Officers" value={s.sos ?? 0} hint={`${s.present ?? 0} present · ${s.absent ?? 0} absent · ${s['no attendance'] ?? 0} not marked`} />
           <StatCard label="Entries" value={s.entries ?? 0} tone="gold" hint={`Target ${data.entry_target} per present SO`} />
           <StatCard label="Met the target" value={s.met_target ?? 0} tone="green" testId="kpi-met" hint={`${pct(s.met_target)} of ${s.expected ?? 0} expected · ${data.entry_target}+ entries`} />
           <StatCard label="Met Lead/Prospect" value={s.met_lead_target ?? 0} tone="blue" testId="kpi-met-lead" hint={`${pct(s.met_lead_target)} · ${data.lead_target}+ genuine · ${s['N/A'] ?? 0} joiners N/A`} />
         </div>
       )}
-      <Card flush>
+      <Card flush className="overflow-hidden">
         {isLoading || !data ? <div className="space-y-2 p-5">{Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-10" />)}</div>
           : data.items.length === 0 ? <EmptyState icon={<BarChart3 size={20} />} title="No Sales Officers in your scope." />
             : (
-              <Table head={['Sales Officer', 'Branch', 'Attendance', 'Entries', `Shortfall (of ${data.entry_target})`, `Lead/Prospect (of ${data.lead_target})`]} exportName="Daily compliance">
+              <Table
+                head={['Sales Officer', 'Branch', 'Attendance', 'Entries', `Shortfall (of ${data.entry_target})`, `Lead/Prospect (of ${data.lead_target})`]}
+                exportName="Daily compliance"
+                maxHeight="max-h-[min(380px,50vh)]"
+              >
                 {data.items.map((r) => (
                   <tr key={r.so_user_id}>
                     <Td><div className="font-medium text-slate-900">{r.name}</div><div className="text-xs text-slate-500">{r.emp_code}{r.designation && ` · ${r.designation}`}</div></Td>

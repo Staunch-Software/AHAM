@@ -80,7 +80,7 @@ export default function Shell() {
           <div className="absolute inset-y-0 left-0 w-72 max-w-[85vw] shadow-pop"><Sidebar onNavigate={() => setOpen(false)} /></div>
         </div>
       )}
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 flex flex-col min-h-screen">
         <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-200/80 bg-white/80 px-4 py-3 backdrop-blur lg:px-8">
           <div className="flex items-center gap-3">
             <button type="button" className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 lg:hidden" aria-label="Open menu" onClick={() => setOpen((v) => !v)}>
@@ -99,7 +99,7 @@ export default function Shell() {
             </span>
           )}
         </header>
-        <main id="main" className="mx-auto max-w-7xl p-4 lg:p-8"><Outlet /></main>
+        <main id="main" className="mx-auto max-w-7xl p-3 sm:p-4 lg:px-6 lg:py-3.5 flex-1 flex flex-col w-full min-h-0"><Outlet /></main>
       </div>
     </div>
   )

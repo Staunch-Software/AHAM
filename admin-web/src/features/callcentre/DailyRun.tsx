@@ -67,22 +67,25 @@ export default function DailyRun() {
       <ErrorBox error={[save.error, copy.error, run.error, assign.error, move.error].map((e) => e && errorMessage(e)).find(Boolean) ?? null} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        <Card title="1 · Caller of the day per branch" subtitle="New entries of a branch go to its caller of the day"
+        <Card
+          title="1 · Caller of the day per branch"
+          subtitle="New entries of a branch go to its caller of the day"
+          className="h-full flex flex-col"
           actions={<div className="flex gap-2">
             <Button variant="secondary" small disabled={copy.isPending} onClick={() => copy.mutate()}><Copy size={14} aria-hidden="true" />Copy yesterday</Button>
             <Button small disabled={save.isPending} onClick={() => save.mutate()}><Save size={14} aria-hidden="true" />Save</Button>
           </div>}>
           {days.isLoading ? <Skeleton className="h-40" /> : (
-            <>
+            <div className="flex-1 flex flex-col min-h-0">
               {moved !== null && (
-                <p className="mb-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">
+                <p className="mb-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800 shrink-0" role="status">
                   Saved.{moved ? ` ${moved} new ${moved === 1 ? 'entry' : 'entries'} not yet called went to the caller now set for ${moved === 1 ? 'its' : 'their'} branch. Retries stay with their first caller.` : ''}
                 </p>
               )}
-              <div className="mb-3 flex items-center gap-2 text-xs text-slate-500">Set all to
+              <div className="mb-3 flex items-center gap-2 text-xs text-slate-500 shrink-0">Set all to
                 <Select className="w-auto py-1 text-xs" value="" onChange={(e) => e.target.value && setAll(e.target.value)}><option value="">choose…</option>{activeCallers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}</Select>
               </div>
-              <div className="max-h-[420px] overflow-y-auto rounded-xl border border-slate-100">
+              <div className="flex-1 min-h-0 max-h-[170px] overflow-y-auto rounded-xl border border-slate-100 custom-scrollbar">
                 <table className="w-full text-sm">
                   <tbody className="divide-y divide-slate-100">
                     {days.data?.items.map((b) => (
@@ -98,7 +101,7 @@ export default function DailyRun() {
                   </tbody>
                 </table>
               </div>
-            </>
+            </div>
           )}
         </Card>
 

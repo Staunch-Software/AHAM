@@ -70,7 +70,7 @@ function History() {
   const history = useQuery({ queryKey: ['irr', 'uploads'], queryFn: async () => (await api.get<Batch[]>('/irr/uploads')).data })
   return (
     <Card title="Upload history" className="mt-6" flush>
-      <Table head={['When', 'File', 'By', 'Rows', 'New', 'Replaced', 'Excluded', 'Exceptions', 'Rows with errors', '']}>
+      <Table head={['When', 'File', 'By', 'Rows', 'New', 'Replaced', 'Excluded', 'Exceptions', 'Rows with errors', '']} maxHeight="max-h-[min(340px,40vh)]">
         {history.data?.map((b) => (
           <tr key={b.id}>
             <Td className="whitespace-nowrap">{new Date(b.created_at).toLocaleString()}</Td>
@@ -127,7 +127,7 @@ function Reconciliation() {
       </div>
       <div className="px-5"><ErrorBox error={error ? errorMessage(error) : null} /></div>
       {data && (
-        <Table head={['Branch / region', 'Rows uploaded', 'Included', 'Excluded', 'Exceptions', 'Included amount (₹)', 'Average tenure (months)', 'Weighted average IRR (%)']}>
+<Table head={['Branch / region', 'Rows uploaded', 'Included', 'Excluded', 'Exceptions', 'Included amount (₹)', 'Average tenure (months)', 'Weighted average IRR (%)']} maxHeight="max-h-[min(440px,50vh)]">
           {data.branches.map((r) => <tr key={`b-${r.label}`}><Td>{r.label} <span className="text-xs text-slate-500">{r.code} · {r.region}</span></Td>{line(r)}</tr>)}
           {data.regions.map((r) => <tr key={`r-${r.label}`} className="bg-slate-50/60"><Td className="font-medium">Region: {r.label}</Td>{line(r)}</tr>)}
           <tr className="bg-slate-50"><Td className="font-semibold text-brand-900">{data.total.label}</Td>{line(data.total, true)}</tr>

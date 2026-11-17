@@ -29,7 +29,7 @@ export default function Team() {
     <>
       <PageTitle subtitle={hr ? 'Everyone on the roster (FOS Spoke): Emp ID, designation, branch, spoke, joining and exit dates. Changed by the roster upload.'
         : 'From the HR roster. Their entries are under Entries; their daily count under Daily compliance.'}>{hr ? 'Employee roster' : 'Team'}</PageTitle>
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-3 flex flex-wrap gap-2">
         <Input className="max-w-sm" placeholder="Search name or Emp ID" value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} />
         <Select aria-label="Role" className="w-auto" value={role} onChange={(e) => { setRole(e.target.value); setPage(1) }}>
           <option value="">All roles</option>{roles?.roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
@@ -41,6 +41,7 @@ export default function Team() {
           : data.items.length === 0 ? <EmptyState icon={<Users size={20} />} title="No one found." />
             : (
               <Table head={['Name (Emp ID)', 'Role', 'Branch', 'Spoke', 'Joining date', 'Exit date', 'Account status']} exportName="Team"
+                maxHeight="max-h-[calc(100vh-20rem)]"
                 exportAll={async () => (await allPages<Employee>('/employees', { q: q || undefined, role: role || undefined })).map((u) => [
                   `${u.full_name} (${u.employee_code})`, `${label(u.role)}${u.designation ? ` · ${u.designation}` : ''}`, nameOf(branches, u.branch_id),
                   u.spoke, u.joining_date, u.exit_date, u.status])}>
