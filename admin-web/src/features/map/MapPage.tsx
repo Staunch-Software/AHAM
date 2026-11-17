@@ -1,9 +1,9 @@
-﻿/// <reference types="google.maps" />
+/// <reference types="google.maps" />
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Info, MapPin, MapPinOff, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Avatar, Button, Card, cx, EmptyState, ErrorBox, PageTitle, RagBadge, Segmented, Select, Skeleton, Table, Td } from '../../components/ui'
+import { Avatar, Button, Card, cx, EmptyState, ErrorBox, ExportBar, PageTitle, RagBadge, Segmented, Select, Skeleton, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
 import { fmtServer } from '../../services/format'
@@ -119,10 +119,10 @@ export default function MapPage() {
         <div role="status" aria-label="Loading map"><Skeleton className="mb-4 h-12" /><Skeleton className="h-[420px] lg:h-[600px]" /></div>
       ) : (
         <>
-          <p className="mb-4 flex items-start gap-2.5 rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-800" data-testid="map-summary">
-            <Info size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-            {data.capped && <span className="mb-1 block font-medium text-roof-700" role="status">The map shows the newest {data.limit.toLocaleString('en-IN')} of {data.total.toLocaleString('en-IN')} entries in this period: pick fewer days, a branch or an SO to see the rest.</span>}
-            <span>{data.markers.length} of {data.capped ? data.shown : data.total} entries have a GPS position{data.without_location > 0 && <> · <strong>{data.without_location}</strong> without GPS are not on the map</>}. These are recorded positions, not live tracking.</span>
+          <p className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-brand-50 px-3.5 py-2 text-xs text-brand-800" data-testid="map-summary">
+            <Info size={15} className="shrink-0" aria-hidden="true" />
+            {data.capped && <span className="font-medium text-roof-700" role="status">The map shows the newest {data.limit.toLocaleString('en-IN')} of {data.total.toLocaleString('en-IN')} entries: pick fewer days or a branch to see the rest.</span>}
+            <span>{data.markers.length} of {data.capped ? data.shown : data.total} entries have a GPS position{data.without_location > 0 && <> · <strong>{data.without_location}</strong> without GPS are not on the map</>}. Recorded positions, not live tracking.</span>
           </p>
           {MAP_KEY ? (
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -156,29 +156,56 @@ export default function MapPage() {
             </div>
           ) : (
             <>
-              <div className="mb-4 flex items-start gap-3 rounded-2xl border border-gold-300/70 bg-gold-50 p-5">
-                <TriangleAlert size={20} className="mt-0.5 shrink-0 text-gold-700" aria-hidden="true" />
-                <div>
-                  <h2 className="text-sm font-semibold text-brand-900">Google Maps is not set up yet</h2>
-                  <p className="mt-1 text-sm text-slate-700" data-testid="map-key-missing">
-                    Add a Google Maps <strong>browser key</strong> to show the map: put <code>VITE_GOOGLE_MAPS_API_KEY=your-key</code> in <code>admin-web/.env.local</code> and restart the web app (steps in <code>docs/google-maps-setup.md</code>). The locations are listed below in the meantime.
-                  </p>
-                </div>
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-amber-300/80 bg-amber-50 px-3.5 py-2 text-xs text-slate-700" data-testid="map-key-missing">
+                <TriangleAlert size={14} className="shrink-0 text-amber-700" aria-hidden="true" />
+                <span className="font-semibold text-brand-900">Google Maps is not set up yet.</span>
+                <span className="text-slate-600">
+                  Locations are listed in the table below. Add <code>VITE_GOOGLE_MAPS_API_KEY</code> in <code>admin-web/.env.local</code> to enable the map.
+                </span>
               </div>
-              <Card title={`Locations (${data.markers.length})`} flush>
-                <Table head={['Entry ID', 'Person met', 'Sales Officer', 'RAG', 'Place name', 'GPS position', 'Entered on (phone time)']} exportName="Entries on the map">
-                  {data.markers.map((m) => (
-                    <tr key={m.id}>
-                      <Td className="whitespace-nowrap"><Link className="font-mono text-xs font-semibold text-brand-700 hover:underline" to={path(`entries/${m.id}`)}>{m.entry_code}</Link></Td>
-                      <Td>{m.person_name}</Td><Td>{m.so_name}<div className="text-xs text-slate-500">{m.branch}</div></Td><Td><RagBadge value={m.rag} /></Td>
-                      <Td>{m.place_name ?? '—'}</Td>
-                      <Td><a className="font-medium text-brand-700 underline" target="_blank" rel="noreferrer noopener" href={`https://www.google.com/maps?q=${m.lat},${m.lng}`}>{m.lat.toFixed(5)}, {m.lng.toFixed(5)}</a>
-                        <div className="text-xs text-slate-500">{m.accuracy_m != null ? `±${Math.round(m.accuracy_m)} m` : '—'} · {ACCURACY_TEXT[accuracyClass(m.accuracy_m)]}</div></Td>
-                      <Td>{fmtServer(m.submitted_at_device)}</Td>
-                    </tr>
-                  ))}
-                </Table>
-                {data.markers.length === 0 && <EmptyState icon={<MapPinOff size={20} />} title="No entries with a GPS position in this period." />}
+              <Card
+                title={`Locations (${data.markers.length})`}
+                flush
+                actions={
+                  data.markers.length > 0 ? (
+                    <ExportBar
+                      name="Entries on the map"
+                      className="!p-0"
+                      header={['Entry ID', 'Person met', 'Sales Officer', 'Branch', 'RAG', 'Place name', 'GPS coordinates', 'Accuracy', 'Entered on (phone time)']}
+                      rows={() => data.markers.map((m) => [
+                        m.entry_code,
+                        m.person_name,
+                        m.so_name,
+                        m.branch,
+                        m.rag,
+                        m.place_name ?? '',
+                        `${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}`,
+                        m.accuracy_m != null ? `±${Math.round(m.accuracy_m)} m` : '',
+                        fmtServer(m.submitted_at_device),
+                      ])}
+                    />
+                  ) : undefined
+                }
+              >
+                {data.markers.length === 0 ? (
+                  <EmptyState icon={<MapPinOff size={20} />} title="No entries with a GPS position in this period." />
+                ) : (
+                  <Table
+                    head={['Entry ID', 'Person met', 'Sales Officer', 'RAG', 'Place name', 'GPS position', 'Entered on (phone time)']}
+                    maxHeight="max-h-[min(440px,55vh)]"
+                  >
+                    {data.markers.map((m) => (
+                      <tr key={m.id}>
+                        <Td className="whitespace-nowrap"><Link className="font-mono text-xs font-semibold text-brand-700 hover:underline" to={path(`entries/${m.id}`)}>{m.entry_code}</Link></Td>
+                        <Td>{m.person_name}</Td><Td>{m.so_name}<div className="text-xs text-slate-500">{m.branch}</div></Td><Td><RagBadge value={m.rag} /></Td>
+                        <Td>{m.place_name ?? '—'}</Td>
+                        <Td><a className="font-medium text-brand-700 underline" target="_blank" rel="noreferrer noopener" href={`https://www.google.com/maps?q=${m.lat},${m.lng}`}>{m.lat.toFixed(5)}, {m.lng.toFixed(5)}</a>
+                          <div className="text-xs text-slate-500">{m.accuracy_m != null ? `±${Math.round(m.accuracy_m)} m` : '—'} · {ACCURACY_TEXT[accuracyClass(m.accuracy_m)]}</div></Td>
+                        <Td>{fmtServer(m.submitted_at_device)}</Td>
+                      </tr>
+                    ))}
+                  </Table>
+                )}
               </Card>
             </>
           )}

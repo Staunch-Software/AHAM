@@ -85,7 +85,7 @@ test('upload problems are a table of row, column, value found and problem, with 
   expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(
     expect.arrayContaining(['IRR report', 'Disbursement register', 'IRR exceptions', 'IRR settings']))
   // every table on a screen can be exported, the upload history too
-  const history = (await screen.findByText('oct.csv')).closest('table')!.parentElement!
+  const history = (await screen.findByText('oct.csv')).closest('table')!.parentElement!.parentElement!  // the table sits in a scroll box beside its export bar
   expect(within(history).getByText('Export:')).toBeInTheDocument()
   const file = new File(['x'], 'register.csv', { type: 'text/csv' })
   await userEvent.upload(await screen.findByLabelText('Disbursement register file'), file)

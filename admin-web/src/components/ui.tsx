@@ -1,5 +1,6 @@
-import { Download, Loader2, X } from 'lucide-react'
-import { ButtonHTMLAttributes, forwardRef, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useRef, useState } from 'react'
+import { Check, ChevronDown, Download, Loader2, Search, X } from 'lucide-react'
+import { ButtonHTMLAttributes, Children, forwardRef, InputHTMLAttributes, isValidElement, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { errorMessage } from '../services/api'
 import { type Cells, saveCsv, saveXlsx, tableCells } from '../services/exporting'
 
@@ -32,7 +33,308 @@ export function Button({ variant = 'primary', small, className, ...p }: ButtonHT
 const field = 'block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 transition focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50 disabled:text-slate-500'
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>((p, ref) => <input ref={ref} {...p} className={cx(field, p.className)} />)
-export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>((p, ref) => <select ref={ref} {...p} className={cx(field, 'pr-8', p.className)} />)
+
+function nodeToText(node: ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(nodeToText).join(' ')
+  if (isValidElement(node) && (node.props as any)?.children) {
+    return nodeToText((node.props as any).children)
+  }
+  return ''
+}
+
+interface ParsedOption {
+  kind: 'option'
+  value: string
+  label: ReactNode
+  text: string
+  disabled?: boolean
+}
+
+interface ParsedGroup {
+  kind: 'group'
+  label: ReactNode
+}
+
+type ParsedItem = ParsedOption | ParsedGroup
+
+function parseSelectChildren(children: ReactNode): ParsedItem[] {
+  const items: ParsedItem[] = []
+  Children.forEach(children, (child) => {
+    if (!isValidElement(child)) return
+    const props = child.props as any
+    if (child.type === 'optgroup' || (props && props.label && props.children)) {
+      items.push({ kind: 'group', label: props.label })
+      Children.forEach(props.children, (sub) => {
+        if (!isValidElement(sub)) return
+        const subProps = sub.props as any
+        const val = String(subProps.value ?? '')
+        const lbl = subProps.children ?? subProps.label ?? val
+        items.push({
+          kind: 'option',
+          value: val,
+          label: lbl,
+          text: (nodeToText(lbl) + ' ' + val).trim().toLowerCase(),
+          disabled: subProps.disabled,
+        })
+      })
+      return
+    }
+
+    const val = String(props.value ?? '')
+    const lbl = props.children ?? props.label ?? val
+    items.push({
+      kind: 'option',
+      value: val,
+      label: lbl,
+      text: (nodeToText(lbl) + ' ' + val).trim().toLowerCase(),
+      disabled: props.disabled,
+    })
+  })
+  return items
+}
+
+export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>((p, ref) => {
+  const { className, value, defaultValue, onChange, disabled, children, autoFocus, ...rest } = p
+  const nativeRef = useRef<HTMLSelectElement | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+
+  const [open, setOpen] = useState(false)
+  const [internalVal, setInternalVal] = useState<string>(String(value ?? defaultValue ?? ''))
+  const [search, setSearch] = useState('')
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  useEffect(() => {
+    if (value !== undefined) {
+      setInternalVal(String(value))
+    }
+  }, [value])
+
+  const handleRef = (el: HTMLSelectElement | null) => {
+    nativeRef.current = el
+    if (typeof ref === 'function') ref(el)
+    else if (ref) (ref as any).current = el
+  }
+
+  const items = parseSelectChildren(children)
+  const allOptions = items.filter((it): it is ParsedOption => it.kind === 'option')
+
+  const currentVal = value !== undefined ? String(value) : internalVal
+  const selected = allOptions.find((o) => o.value === currentVal)
+  const displayLabel = selected?.label ?? (allOptions.find((o) => o.value === '')?.label ?? allOptions[0]?.label ?? currentVal)
+
+  useEffect(() => {
+    if (!open) return
+    const update = () => {
+      if (!triggerRef.current) return
+      const rect = triggerRef.current.getBoundingClientRect()
+      const spaceBelow = window.innerHeight - rect.bottom
+      const spaceAbove = rect.top
+      const menuHeight = 260
+      const placeAbove = spaceBelow < menuHeight && spaceAbove > spaceBelow
+      const margin = 4
+      const top = placeAbove ? Math.max(margin, rect.top - menuHeight - margin) : rect.bottom + margin
+      // For form fields match the trigger button width exactly; for small inline buttons ensure at least 150px
+      const width = isAutoWidth ? Math.max(rect.width, 160) : rect.width
+      // Align left edges by default; if it would overflow the right viewport edge, align right edges
+      let left = rect.left
+      if (left + width > window.innerWidth - margin) {
+        left = rect.right - width
+      }
+      if (left < margin) left = margin
+      setCoords({ top, left, width })
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (open && allOptions.length > 10 && searchInputRef.current) {
+      searchInputRef.current.focus()
+    }
+  }, [open, allOptions.length])
+
+  useEffect(() => {
+    if (!open) return
+    const onMouseDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node
+      if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return
+      setOpen(false)
+      setSearch('')
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        setSearch('')
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('touchstart', onMouseDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('touchstart', onMouseDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  const handleSelect = (val: string) => {
+    setInternalVal(val)
+    if (nativeRef.current) {
+      nativeRef.current.value = val
+      const evt = new Event('change', { bubbles: true })
+      nativeRef.current.dispatchEvent(evt)
+    }
+    if (onChange) {
+      const synthetic = {
+        target: { value: val, name: p.name },
+        currentTarget: { value: val, name: p.name },
+        preventDefault: () => {},
+        stopPropagation: () => {},
+      } as unknown as React.ChangeEvent<HTMLSelectElement>
+      onChange(synthetic)
+    }
+    setOpen(false)
+    setSearch('')
+  }
+
+  const query = search.trim().toLowerCase()
+  const filteredItems = query
+    ? items.filter((it) => it.kind === 'group' || it.text.includes(query))
+    : items
+
+  const isSmall = className?.includes('text-xs') || className?.includes('py-1')
+  const isAutoWidth = className?.includes('w-auto') || className?.includes('w-max')
+
+  return (
+    <div className={cx('relative', isAutoWidth ? 'inline-block' : 'block w-full')}>
+      <select
+        ref={handleRef}
+        {...rest}
+        value={currentVal}
+        disabled={disabled}
+        onChange={(e) => {
+          setInternalVal(e.target.value)
+          onChange?.(e)
+        }}
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
+      >
+        {children}
+      </select>
+
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={disabled}
+        autoFocus={autoFocus}
+        aria-label={p['aria-label']}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => !disabled && setOpen((o) => !o)}
+        className={cx(
+          'group relative flex items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white text-left font-normal shadow-sm transition',
+          'hover:border-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 active:bg-slate-50',
+          disabled ? 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400' : 'cursor-pointer text-slate-800',
+          isSmall ? 'px-2.5 py-1 text-xs' : 'px-3 py-2 text-sm',
+          isAutoWidth ? 'w-auto min-w-[180px] sm:min-w-[200px]' : 'w-full',
+          className?.replace(/\bpr-8\b/g, '')
+        )}
+      >
+        <span className="truncate">{displayLabel}</span>
+        <ChevronDown
+          size={isSmall ? 13 : 15}
+          className={cx(
+            'shrink-0 text-slate-400 transition-transform duration-200',
+            open && 'rotate-180 text-brand-700'
+          )}
+        />
+      </button>
+
+      {open && coords && createPortal(
+        <div
+          ref={menuRef}
+          style={{
+            position: 'fixed',
+            top: coords.top,
+            left: coords.left,
+            width: coords.width,
+            zIndex: 9999,
+          }}
+          className="rounded-xl border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-black/5"
+          role="listbox"
+        >
+          {allOptions.length > 10 && (
+            <div className="border-b border-slate-100 p-1.5">
+              <div className="relative flex items-center">
+                <Search size={13} className="pointer-events-none absolute left-2.5 text-slate-400" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Filter..."
+                  className="w-full rounded-md border border-slate-200 bg-slate-50 py-1 pl-7 pr-2 text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="max-h-56 overflow-y-auto overscroll-contain custom-scrollbar px-1 py-1 space-y-0.5">
+            {filteredItems.length === 0 ? (
+              <div className="px-3 py-2 text-center text-xs text-slate-400">No matches</div>
+            ) : (
+              filteredItems.map((item, idx) => {
+                if (item.kind === 'group') {
+                  return (
+                    <div
+                      key={`grp-${idx}`}
+                      className="px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400"
+                    >
+                      {item.label}
+                    </div>
+                  )
+                }
+
+                const isSelected = item.value === currentVal
+                return (
+                  <button
+                    key={`${item.value}-${idx}`}
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    disabled={item.disabled}
+                    onClick={() => handleSelect(item.value)}
+                    className={cx(
+                      'flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs sm:text-sm transition-colors',
+                      isSelected
+                        ? 'bg-brand-50 font-medium text-brand-900'
+                        : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900',
+                      item.disabled && 'cursor-not-allowed opacity-40 hover:bg-transparent'
+                    )}
+                  >
+                    <span className="truncate pr-2">{item.label}</span>
+                    {isSelected && <Check size={14} className="shrink-0 text-brand-700" />}
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  )
+})
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>((p, ref) => <textarea ref={ref} {...p} className={cx(field, 'resize-y', p.className)} />)
 
@@ -63,26 +365,100 @@ export function Toggle({ checked, onChange, label, disabled }: { checked: boolea
 
 /* ---------- layout ---------- */
 
-export const Card = ({ title, subtitle, actions, children, className, flush }: { title?: string; subtitle?: string; actions?: ReactNode; children: ReactNode; className?: string; flush?: boolean }) => (
-  <section className={cx('rounded-2xl border border-slate-200/80 bg-white shadow-card', flush ? 'overflow-hidden' : 'p-5', className)}>
-    {(title || actions) && (
-      <header className={cx('flex flex-wrap items-start justify-between gap-2', flush ? 'px-5 pt-5' : '', 'mb-4')}>
-        <div>
-          {title && <h2 className="text-sm font-semibold text-brand-900">{title}</h2>}
-          {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
-        </div>
-        {actions}
-      </header>
-    )}
-    {children}
-  </section>
-)
+export function Card({
+  title,
+  subtitle,
+  actions,
+  children,
+  className,
+  flush,
+  collapsible,
+  defaultOpen = true,
+  open: controlledOpen,
+  onToggle,
+}: {
+  title?: string
+  subtitle?: string
+  actions?: ReactNode
+  children: ReactNode
+  className?: string
+  flush?: boolean
+  collapsible?: boolean
+  defaultOpen?: boolean
+  open?: boolean
+  onToggle?: (open: boolean) => void
+}) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen)
+  const isOpen = controlledOpen !== undefined ? controlledOpen : uncontrolledOpen
 
-export const PageTitle = ({ children, subtitle, actions }: { children: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) => (
-  <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+  const handleToggle = () => {
+    const next = !isOpen
+    if (controlledOpen === undefined) setUncontrolledOpen(next)
+    onToggle?.(next)
+  }
+
+  return (
+    <section className={cx('rounded-2xl border border-slate-200/80 bg-white shadow-card transition-all', flush ? 'overflow-hidden' : 'p-4 sm:p-5', className)}>
+      {(title || actions || collapsible) && (
+        <header
+          className={cx(
+            'flex flex-wrap items-center justify-between gap-2',
+            flush ? 'px-4 sm:px-5 pt-4 sm:pt-5' : '',
+            isOpen && children ? 'mb-4' : 'mb-0',
+            collapsible && 'cursor-pointer select-none group/hdr'
+          )}
+          onClick={collapsible ? handleToggle : undefined}
+        >
+          <div className="flex-1 min-w-0">
+            {title && (
+              <h2 className={cx('text-sm font-semibold text-brand-900 transition-colors', collapsible && 'group-hover/hdr:text-brand-700')}>
+                {title}
+              </h2>
+            )}
+            {subtitle && (!collapsible || isOpen) && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
+          </div>
+          <div className="flex items-center gap-2 shrink-0" onClick={(e) => collapsible && e.stopPropagation()}>
+            {actions}
+            {collapsible && (
+              <button
+                type="button"
+                aria-expanded={isOpen}
+                aria-label={isOpen ? `Collapse ${title}` : `Expand ${title}`}
+                onClick={handleToggle}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-brand-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+              >
+                <ChevronDown
+                  size={18}
+                  className={cx(
+                    'transition-transform duration-200 text-slate-400 group-hover/hdr:text-brand-700',
+                    isOpen && 'rotate-180 text-brand-700'
+                  )}
+                />
+              </button>
+            )}
+          </div>
+        </header>
+      )}
+      {(!collapsible || isOpen) && children}
+    </section>
+  )
+}
+
+export const PageTitle = ({
+  children,
+  subtitle,
+  actions,
+  className,
+}: {
+  children: ReactNode
+  subtitle?: ReactNode
+  actions?: ReactNode
+  className?: string
+}) => (
+  <div className={cx('mb-3 sm:mb-4 flex flex-wrap items-end justify-between gap-2.5 shrink-0', className)}>
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-brand-900">{children}</h1>
-      {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+      <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-brand-900">{children}</h1>
+      {subtitle && <p className="mt-0.5 text-xs sm:text-sm text-slate-500">{subtitle}</p>}
     </div>
     {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
   </div>
@@ -262,21 +638,65 @@ export const Badge = ({ value }: { value: string }) => {
 /** Flat table: put it inside `<Card flush>` for the rounded border.
  *  `exportName` adds "Export: CSV / Excel". It exports the rows on screen (columns with an empty heading, such as
  *  buttons, are left out), or, for a paged list, `exportAll`: every row, in the order of the non-empty headings. */
-export function Table({ head, children, exportName, exportAll, exportHeader }: {
-  head: string[]; children: ReactNode; exportName?: string; exportAll?: () => Promise<Cells[]>; exportHeader?: string[]
+export function Table({
+  head,
+  children,
+  exportName,
+  exportAll,
+  exportHeader,
+  className,
+  containerClassName,
+  maxHeight = 'max-h-[calc(100vh-16.5rem)]',
+  stickyFirstColumn = true,
+}: {
+  head: string[]
+  children: ReactNode
+  exportName?: string
+  exportAll?: () => Promise<Cells[]>
+  exportHeader?: string[]
+  className?: string
+  containerClassName?: string
+  maxHeight?: string
+  stickyFirstColumn?: boolean
 }) {
   const ref = useRef<HTMLTableElement>(null)
   const columns = head.filter((h) => h !== '')
   const rows = async () => (exportAll ? exportAll() : tableCells(ref.current!, head.map((h) => h !== '')))
   return (
-    <div className="overflow-x-auto">
-      {exportName && <ExportBar name={exportName} header={exportHeader ?? columns} rows={rows} />}
-      <table ref={ref} className="w-full text-left text-sm">
-        <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-          <tr>{head.map((h, i) => <th key={`${h}${i}`} scope="col" className="whitespace-nowrap border-y border-slate-200 px-4 py-3">{h}</th>)}</tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-brand-50/40">{children}</tbody>
-      </table>
+    <div className={cx('flex flex-col w-full min-h-0', containerClassName)}>
+      {exportName && <ExportBar name={exportName} header={exportHeader ?? columns} rows={rows} className="shrink-0" />}
+      <div className={cx('overflow-x-auto overflow-y-auto custom-scrollbar min-h-0', maxHeight, className)}>
+        <table
+          ref={ref}
+          className={cx(
+            'w-full text-left text-sm border-separate border-spacing-0',
+            stickyFirstColumn &&
+              '[&_tbody_tr>td:first-child]:sticky [&_tbody_tr>td:first-child]:left-0 [&_tbody_tr>td:first-child]:z-10 [&_tbody_tr>td:first-child]:bg-white [&_tbody_tr:hover>td:first-child]:!bg-brand-50 [&_tbody_tr>td:first-child]:border-r [&_tbody_tr>td:first-child]:border-slate-200 [&_tbody_tr>td:first-child]:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]'
+          )}
+        >
+          <thead className="sticky top-0 z-20 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <tr>
+              {head.map((h, i) => (
+                <th
+                  key={`${h}${i}`}
+                  scope="col"
+                  className={cx(
+                    'whitespace-nowrap sticky top-0 border-b border-slate-200 px-4 py-3 bg-slate-50',
+                    i === 0 && stickyFirstColumn
+                      ? 'left-0 z-30 bg-slate-50 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]'
+                      : 'z-20'
+                  )}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-brand-50 [&_td]:border-b [&_td]:border-slate-100">
+            {children}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

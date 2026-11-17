@@ -49,11 +49,11 @@ export function ExportButtons({ url, params, name }: { url: string; params: Reco
 
 /** A table whose columns come in named pairs (for example "For the day (TD)" over No. and IRR). */
 export function GroupedTable({ lead, groups, children }: { lead: string[]; groups: { label: string; cols: string[] }[]; children: ReactNode }) {
-  const th = 'border-y border-slate-200 px-4 py-2.5'
+  const th = 'border-y border-slate-200 px-4 py-2.5 bg-slate-50'
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead className="bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+    <div className="overflow-x-auto overflow-y-auto max-h-[min(520px,65vh)] custom-scrollbar min-h-0">
+      <table className="w-full text-left text-sm border-separate border-spacing-0">
+        <thead className="sticky top-0 z-20 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
           <tr>
             {lead.map((h) => <th key={h} scope="col" rowSpan={2} className={`${th} whitespace-nowrap align-bottom`}>{h}</th>)}
             {groups.map((g) => <th key={g.label} scope="colgroup" colSpan={g.cols.length} className={`${th} border-l text-center text-brand-800`}>{g.label}</th>)}

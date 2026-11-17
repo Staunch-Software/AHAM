@@ -19,7 +19,7 @@ export function EntryFilters({ params, onChange, extra }: { params: URLSearchPar
   const { data: branches } = useBranches()
   const set = (k: string, v: string) => { const n = new URLSearchParams(params); v ? n.set(k, v) : n.delete(k); n.delete('page'); onChange(n) }
   return (
-    <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-card sm:grid-cols-2 lg:grid-cols-4">
+    <div className="mb-2.5 sm:mb-3 grid gap-2 sm:gap-2.5 rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-3.5 shadow-card sm:grid-cols-2 lg:grid-cols-4 shrink-0">
       <label className="relative sm:col-span-2">
         <span className="sr-only">Search</span>
         <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
@@ -67,9 +67,14 @@ export function EntryTable({ rows, link, exportName, exportAll }: {
   rows: EntryRow[]; link: (r: EntryRow) => string; exportName?: string; exportAll?: () => Promise<EntryRow[]>
 }) {
   return (
-    <Table head={['Entry ID', 'Person met (mobile number)', 'Category', 'Sales Officer (Emp ID · branch)', 'Entered on (phone time)', 'Current status', 'RAG', 'Next action']}
-      exportName={exportName} exportHeader={ENTRY_EXPORT.map(([h]) => h)}
-      exportAll={async () => ((exportAll ? await exportAll() : rows).map((r) => ENTRY_EXPORT.map(([, f]) => f(r))))}>
+    <Table
+      head={['Entry ID', 'Person met (mobile number)', 'Category', 'Sales Officer (Emp ID · branch)', 'Entered on (phone time)', 'Current status', 'RAG', 'Next action']}
+      exportName={exportName}
+      exportHeader={ENTRY_EXPORT.map(([h]) => h)}
+      exportAll={async () => ((exportAll ? await exportAll() : rows).map((r) => ENTRY_EXPORT.map(([, f]) => f(r))))}
+      maxHeight="max-h-[calc(100vh-23.5rem)]"
+      containerClassName="flex-1 min-h-0"
+    >
       {rows.map((r) => {
         const made = fmtParts(r.submitted_at_device)
         return (
@@ -110,16 +115,16 @@ export default function EntryList() {
     placeholderData: keepPreviousData,
   })
   return (
-    <>
+    <div className="flex-1 flex flex-col min-h-0">
       <PageTitle subtitle="One entry per person met. The Entry ID is permanent; the time is the Submit press on the phone.">Entries</PageTitle>
       <EntryFilters params={params} onChange={setParams} />
       <ErrorBox error={error ? errorMessage(error) : null} />
-      <Card flush>
+      <Card flush className="flex-1 min-h-0 flex flex-col justify-between">
         {isLoading || !data ? <div className="space-y-2 p-5">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-10" />)}</div>
           : data.items.length === 0 ? <EmptyState icon={<GanttChartSquare size={20} />} title="No entries match these filters." />
             : <EntryTable rows={data.items} link={(r) => path(`entries/${r.id}`)} exportName="Entries" exportAll={() => allPages<EntryRow>('/entries', entryParams(params))} />}
         {data && data.total > 0 && <Pager page={page} pageSize={25} total={data.total} onChange={(p) => { const n = new URLSearchParams(params); n.set('page', String(p)); setParams(n) }} />}
       </Card>
-    </>
+    </div>
   )
 }

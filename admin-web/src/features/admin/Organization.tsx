@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, Pencil, Plus } from 'lucide-react'
+import { Building2, Pencil, Plus, Search, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
-import { Badge, Button, Card, Dialog, ErrorBox, Field, Input, Note, PageTitle, Select, Table, Td } from '../../components/ui'
+import { Badge, Button, Card, Dialog, ErrorBox, ExportBar, Field, Input, PageTitle, Select, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
 import { nameOf, useBranches, useClusters, useRegions } from '../../services/meta'
 import type { Branch, Cluster, Region } from '../../types'
@@ -61,56 +61,190 @@ export default function Organization() {
   const { data: heads } = useQuery({ queryKey: ['org-managers'], queryFn: async () => (await api.get<Heads>('/org/managers')).data })
   const orphanBranches = branches?.filter((b) => !heads?.branches[b.id]?.length && b.region_id && !heads?.regions[b.region_id]?.length) ?? []
   const [editing, setEditing] = useState<Editing | null>(null)
+  const [regionQuery, setRegionQuery] = useState('')
+  const [clusterQuery, setClusterQuery] = useState('')
+  const [branchQuery, setBranchQuery] = useState('')
+
+  const filteredRegions = (regions ?? []).filter((r) => {
+    const q = regionQuery.trim().toLowerCase()
+    if (!q) return true
+    const rbh = heads?.regions[r.id]?.join(' ')?.toLowerCase() ?? ''
+    return r.name.toLowerCase().includes(q) || r.code.toLowerCase().includes(q) || rbh.includes(q)
+  })
+
+  const filteredClusters = (clusters ?? []).filter((c) => {
+    const q = clusterQuery.trim().toLowerCase()
+    if (!q) return true
+    const reg = nameOf(regions, c.region_id).toLowerCase()
+    const rtm = heads?.clusters[c.id]?.join(' ')?.toLowerCase() ?? ''
+    return c.name.toLowerCase().includes(q) || reg.includes(q) || rtm.includes(q)
+  })
+
+  const sortedBranches = [...(branches ?? [])].sort(
+    (a, b) => nameOf(regions, a.region_id).localeCompare(nameOf(regions, b.region_id)) || a.name.localeCompare(b.name)
+  )
+
+  const filteredBranches = sortedBranches.filter((b) => {
+    const q = branchQuery.trim().toLowerCase()
+    if (!q) return true
+    const reg = nameOf(regions, b.region_id).toLowerCase()
+    const clu = nameOf(clusters, b.cluster_id).toLowerCase()
+    const bm = heads?.branches[b.id]?.join(' ')?.toLowerCase() ?? ''
+    return (
+      b.name.toLowerCase().includes(q) ||
+      b.code.toLowerCase().includes(q) ||
+      reg.includes(q) ||
+      clu.includes(q) ||
+      bm.includes(q)
+    )
+  })
+
   return (
-    <>
+    <div className="flex-1 flex flex-col min-h-0">
       <PageTitle subtitle="Regions, optional clusters and branches. Seeded from Annex A with placeholder branch codes: replace them with the real ones."
         actions={<><Button variant="secondary" onClick={() => setEditing({ kind: 'region' })}><Plus size={16} aria-hidden="true" />Region</Button>
           <Button variant="secondary" onClick={() => setEditing({ kind: 'cluster' })}><Plus size={16} aria-hidden="true" />Cluster</Button>
           <Button onClick={() => setEditing({ kind: 'branch' })}><Plus size={16} aria-hidden="true" />Branch</Button></>}>
         Organization
       </PageTitle>
-      {heads && orphanBranches.length > 0 && (
-        <Note tone="gold"><strong>Nobody answers the leads of {orphanBranches.length} {orphanBranches.length === 1 ? 'branch' : 'branches'}</strong>{' '}
-          ({orphanBranches.slice(0, 5).map((b) => b.name).join(', ')}{orphanBranches.length > 5 ? ` and ${orphanBranches.length - 5} more` : ''}):
-          no BM in the branch and no RBH in its region. Set one under Users &amp; roles.</Note>
-      )}
-      <Note tone="gold">Open questions for Aham: <strong>Madurai</strong> is under RoTN U here (call-centre allocation) but under RoTN C in the regional pipeline files; <strong>Krishnagiri</strong> is under RoTN C here but appears in the Chennai Sankalp form. Edit the branch once confirmed.</Note>
-      <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <div className="space-y-6">
-          <Card title={`Regions (${regions?.length ?? 0})`} flush>
-            <ul className="divide-y divide-slate-100">
-              {regions?.map((r) => (
-                <li key={r.id} className="flex items-center justify-between px-5 py-2.5 text-sm">
-                  <span><span className="font-medium text-slate-900">{r.name}</span> <span className="text-xs text-slate-400">{r.code}</span>
-                    <span className="block">RBH: <Head names={heads?.regions[r.id]} none="No RBH" /></span></span>
-                  <Button small variant="ghost" aria-label={`Edit ${r.name}`} onClick={() => setEditing({ kind: 'region', item: r })}><Pencil size={14} aria-hidden="true" /></Button>
-                </li>
-              ))}
-            </ul>
+
+      <div className="mb-2.5 space-y-1.5 shrink-0">
+        {heads && orphanBranches.length > 0 && (
+          <div className="flex items-center gap-2 rounded-lg border border-amber-200/80 bg-amber-50/80 px-3 py-1.5 text-xs text-amber-900" role="alert">
+            <TriangleAlert size={14} className="shrink-0 text-amber-600" aria-hidden="true" />
+            <span className="truncate">
+              <strong>Nobody answers the leads of {orphanBranches.length} {orphanBranches.length === 1 ? 'branch' : 'branches'}</strong>{' '}
+              ({orphanBranches.slice(0, 4).map((b) => b.name).join(', ')}{orphanBranches.length > 4 ? ` and ${orphanBranches.length - 4} more` : ''}):
+              no BM in the branch and no RBH in its region. Set one under Users &amp; roles.
+            </span>
+          </div>
+        )}
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200/80 bg-amber-50/80 px-3 py-1.5 text-xs text-amber-900" role="alert">
+          <TriangleAlert size={14} className="shrink-0 text-amber-600" aria-hidden="true" />
+          <span className="truncate">
+            <strong>Open questions for Aham:</strong> Madurai (RoTN U vs RoTN C); Krishnagiri (RoTN C vs Chennai form). Edit branch once confirmed.
+          </span>
+        </div>
+      </div>
+
+      <div className="grid gap-3.5 lg:grid-cols-[300px_minmax(0,1fr)] flex-1 min-h-0 max-h-[calc(100vh-15rem)] h-[calc(100vh-15rem)] items-stretch">
+        <div className="flex flex-col gap-3 min-h-0 h-full">
+          <Card
+            title={`Regions (${filteredRegions.length})`}
+            flush
+            className="flex-1 min-h-0 flex flex-col"
+            actions={
+              <div className="relative w-28 sm:w-36">
+                <Search size={13} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <Input
+                  placeholder="Search..."
+                  value={regionQuery}
+                  onChange={(e) => setRegionQuery(e.target.value)}
+                  className="h-7 pl-6 text-xs"
+                />
+              </div>
+            }
+          >
+            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar border-t border-slate-100">
+              <ul className="divide-y divide-slate-100">
+                {filteredRegions.map((r) => (
+                  <li key={r.id} className="flex items-center justify-between px-4 py-2 text-sm">
+                    <span><span className="font-medium text-slate-900">{r.name}</span> <span className="text-xs text-slate-400">{r.code}</span>
+                      <span className="block text-xs">RBH: <Head names={heads?.regions[r.id]} none="No RBH" /></span></span>
+                    <Button small variant="ghost" aria-label={`Edit ${r.name}`} onClick={() => setEditing({ kind: 'region', item: r })}><Pencil size={14} aria-hidden="true" /></Button>
+                  </li>
+                ))}
+                {!filteredRegions.length && <li className="px-4 py-3 text-xs text-slate-500">No regions match.</li>}
+              </ul>
+            </div>
           </Card>
-          <Card title={`Clusters (${clusters?.length ?? 0})`} subtitle="Not every branch has one" flush>
-            <ul className="divide-y divide-slate-100">
-              {clusters?.map((c) => (
-                <li key={c.id} className="flex items-center justify-between px-5 py-2.5 text-sm">
-                  <span><span className="font-medium text-slate-900">{c.name}</span><span className="block text-xs text-slate-500">{nameOf(regions, c.region_id)}</span>
-                    <span className="block">RTM: <Head names={heads?.clusters[c.id]} none="No RTM" /></span></span>
-                  <Button small variant="ghost" aria-label={`Edit ${c.name}`} onClick={() => setEditing({ kind: 'cluster', item: c })}><Pencil size={14} aria-hidden="true" /></Button>
-                </li>
-              ))}
-              {!clusters?.length && <li className="px-5 py-4 text-sm text-slate-500">No clusters yet.</li>}
-            </ul>
+
+          <Card
+            title={`Clusters (${filteredClusters.length})`}
+            flush
+            className="flex-1 min-h-0 flex flex-col"
+            actions={
+              <div className="relative w-28 sm:w-36">
+                <Search size={13} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <Input
+                  placeholder="Search..."
+                  value={clusterQuery}
+                  onChange={(e) => setClusterQuery(e.target.value)}
+                  className="h-7 pl-6 text-xs"
+                />
+              </div>
+            }
+          >
+            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar border-t border-slate-100">
+              <ul className="divide-y divide-slate-100">
+                {filteredClusters.map((c) => (
+                  <li key={c.id} className="flex items-center justify-between px-4 py-2 text-sm">
+                    <span><span className="font-medium text-slate-900">{c.name}</span>
+                      <span className="block text-xs text-slate-500">{nameOf(regions, c.region_id)}</span>
+                      <span className="block text-xs">RTM: <Head names={heads?.clusters[c.id]} none="No RTM" /></span></span>
+                    <Button small variant="ghost" aria-label={`Edit ${c.name}`} onClick={() => setEditing({ kind: 'cluster', item: c })}><Pencil size={14} aria-hidden="true" /></Button>
+                  </li>
+                ))}
+                {!filteredClusters.length && <li className="px-4 py-3 text-xs text-slate-500">No clusters yet.</li>}
+              </ul>
+            </div>
           </Card>
         </div>
-        <Card title={`Branches (${branches?.length ?? 0})`} flush actions={<Building2 size={18} className="text-slate-400" />}>
-          <Table head={['Branch', 'Branch code', 'Region', 'Cluster', 'Branch Manager', 'Status', '']} exportName="Branches">
-            {[...(branches ?? [])].sort((a, b) => nameOf(regions, a.region_id).localeCompare(nameOf(regions, b.region_id)) || a.name.localeCompare(b.name)).map((b) => (
-              <tr key={b.id}><Td className="font-medium text-slate-900">{b.name}</Td><Td className="font-mono text-xs">{b.code}</Td><Td>{nameOf(regions, b.region_id)}</Td><Td>{nameOf(clusters, b.cluster_id)}</Td><Td><Head names={heads?.branches[b.id]} none={b.region_id && heads?.regions[b.region_id]?.length ? 'No BM: RBH answers' : 'No BM, no RBH'} /></Td><Td><Badge value={b.status} /></Td>
-                <Td><Button small variant="ghost" aria-label={`Edit ${b.name}`} onClick={() => setEditing({ kind: 'branch', item: b })}><Pencil size={14} aria-hidden="true" /></Button></Td></tr>
+
+        <Card
+          title={`Branches (${filteredBranches.length})`}
+          flush
+          className="flex-1 min-h-0 flex flex-col h-full"
+          actions={
+            <div className="flex items-center gap-2">
+              <div className="relative w-36 sm:w-48">
+                <Search size={13} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <Input
+                  placeholder="Search branches..."
+                  value={branchQuery}
+                  onChange={(e) => setBranchQuery(e.target.value)}
+                  className="h-7 pl-6 text-xs"
+                />
+              </div>
+              <ExportBar
+                name="Branches"
+                header={['Branch', 'Branch code', 'Region', 'Cluster', 'Branch Manager', 'Status']}
+                rows={async () => filteredBranches.map((b) => [
+                  b.name, b.code, nameOf(regions, b.region_id), nameOf(clusters, b.cluster_id),
+                  heads?.branches[b.id]?.join(', ') || (b.region_id && heads?.regions[b.region_id]?.length ? 'No BM: RBH answers' : 'No BM, no RBH'),
+                  b.status
+                ])}
+                className="!border-b-0 !bg-transparent !p-0"
+              />
+            </div>
+          }
+        >
+          <Table
+            head={['Branch', 'Branch code', 'Region', 'Cluster', 'Branch Manager', 'Status', '']}
+            maxHeight="h-full flex-1"
+            containerClassName="flex-1 min-h-0 flex flex-col"
+            className="flex-1 min-h-0"
+          >
+            {filteredBranches.map((b) => (
+              <tr key={b.id}>
+                <Td className="font-medium text-slate-900">{b.name}</Td>
+                <Td className="font-mono text-xs">{b.code}</Td>
+                <Td>{nameOf(regions, b.region_id)}</Td>
+                <Td>{nameOf(clusters, b.cluster_id)}</Td>
+                <Td><Head names={heads?.branches[b.id]} none={b.region_id && heads?.regions[b.region_id]?.length ? 'No BM: RBH answers' : 'No BM, no RBH'} /></Td>
+                <Td><Badge value={b.status} /></Td>
+                <Td><Button small variant="ghost" aria-label={`Edit ${b.name}`} onClick={() => setEditing({ kind: 'branch', item: b })}><Pencil size={14} aria-hidden="true" /></Button></Td>
+              </tr>
             ))}
+            {!filteredBranches.length && (
+              <tr>
+                <td colSpan={7} className="px-4 py-4 text-center text-xs text-slate-500">No branches match.</td>
+              </tr>
+            )}
           </Table>
         </Card>
       </div>
       {editing && <EditDialog editing={editing} onClose={() => setEditing(null)} />}
-    </>
+    </div>
   )
 }

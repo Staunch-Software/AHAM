@@ -30,21 +30,24 @@ export default function Audit() {
         <Card flush><div className="space-y-3 p-5" role="status" aria-label="Loading audit log">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-10" />)}</div></Card>
       ) : (
         <Card flush>
-          <Table head={['When', 'Who', 'Action', 'Record', 'What changed']} exportName="Audit log"
-            exportAll={async () => (await allPages<Entry>('/audit-logs')).map((e) => [fmtServer(e.created_at), e.actor ?? 'system', e.action,
-              `${e.entity_type} ${e.entity_id ?? ''}`, e.details ? describe(e.details).join('; ') : ''])}>
-            {data?.items.map((e) => (
-              <tr key={e.id}>
-                <Td className="whitespace-nowrap">{fmtServer(e.created_at)}</Td>
-                <Td><span className="flex items-center gap-2"><Avatar name={e.actor ?? 'system'} size="sm" />{e.actor ?? 'system'}</span></Td>
-                <Td><span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-700">{e.action}</span></Td>
-                <Td className="font-mono text-xs text-slate-500">{e.entity_type} {e.entity_id?.slice(0, 8)}</Td>
-                <Td className="text-xs text-slate-600">{e.details ? describe(e.details).map((l) => <div key={l}>{l}</div>) : ''}</Td>
-              </tr>
-            ))}
-          </Table>
-          {data?.items.length === 0 && <EmptyState icon={<ScrollText size={22} />} title="Nothing recorded yet." />}
-          {data && <Pager page={data.page} pageSize={data.page_size} total={data.total} onChange={setPage} />}
+          {!data?.items.length ? (
+            <EmptyState icon={<ScrollText size={22} />} title="Nothing recorded yet." />
+          ) : (
+            <Table head={['When', 'Who', 'Action', 'Record', 'What changed']} exportName="Audit log" maxHeight="max-h-[min(500px,60vh)]"
+              exportAll={async () => (await allPages<Entry>('/audit-logs')).map((e) => [fmtServer(e.created_at), e.actor ?? 'system', e.action,
+                `${e.entity_type} ${e.entity_id ?? ''}`, e.details ? describe(e.details).join('; ') : ''])}>
+              {data.items.map((e) => (
+                <tr key={e.id}>
+                  <Td className="whitespace-nowrap">{fmtServer(e.created_at)}</Td>
+                  <Td><span className="flex items-center gap-2"><Avatar name={e.actor ?? 'system'} size="sm" />{e.actor ?? 'system'}</span></Td>
+                  <Td><span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-700">{e.action}</span></Td>
+                  <Td className="font-mono text-xs text-slate-500">{e.entity_type} {e.entity_id?.slice(0, 8)}</Td>
+                  <Td className="text-xs text-slate-600">{e.details ? describe(e.details).map((l) => <div key={l}>{l}</div>) : ''}</Td>
+                </tr>
+              ))}
+            </Table>
+          )}
+          {data && data.total > 0 && <Pager page={data.page} pageSize={data.page_size} total={data.total} onChange={setPage} />}
         </Card>
       )}
     </>

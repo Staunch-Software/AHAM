@@ -83,7 +83,7 @@ function DetailDialog({ target, asOf, onClose }: { target: DetailTarget; asOf: s
         {isLoading ? <div className="space-y-2 p-4">{Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-8" />)}</div>
           : !data?.items.length ? <EmptyState title="No disbursements count in this period." />
             : (
-              <Table head={['Loan account', 'Date', 'Branch', 'Product', 'Amount (₹)', 'Tenure (months)', 'ROI (%)', 'Transaction IRR (amount × tenure × ROI)']}>
+<Table head={['Loan account', 'Date', 'Branch', 'Product', 'Amount (₹)', 'Tenure (months)', 'ROI (%)', 'Transaction IRR (amount × tenure × ROI)']} maxHeight="max-h-[min(450px,50vh)]">
                 {data.items.map((i) => (
                   <tr key={i.id}>
                     <Td className="whitespace-nowrap font-medium text-slate-900">{i.loan_account || <span className="font-normal text-slate-400">no loan account</span>}{i.disbursement_ref && <span className="ml-1 text-xs text-slate-500">#{i.disbursement_ref}</span>}</Td>

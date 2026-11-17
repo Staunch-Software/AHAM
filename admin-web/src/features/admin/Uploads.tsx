@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, FileSpreadsheet, KeyRound, Upload } from 'lucide-react'
+import { Download, FileSpreadsheet, KeyRound, Upload, UploadCloud } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { Button, Card, cx, Dialog, ErrorBox, PageTitle, Table, Td, Toggle } from '../../components/ui'
+import { Button, Card, cx, Dialog, EmptyState, ErrorBox, ExportBar, PageTitle, Skeleton, Table, Td, Toggle } from '../../components/ui'
 import { api, download, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
 import { csvCell } from '../../services/format'
@@ -98,18 +98,58 @@ export default function Uploads() {
   const kinds = KINDS.filter((k) => can(k.perm))
   const history = useQuery({ queryKey: ['imports'], queryFn: async () => (await api.get<Batch[]>('/imports')).data })
   const [problems, setProblems] = useState<Batch | null>(null)
+  const hasHistory = !!history.data?.length
+
   return (
     <>
       <PageTitle subtitle="Check a file first to see what would change; then upload. Every upload is kept in the history below.">Uploads</PageTitle>
       <div className="space-y-6">{kinds.map((k) => <UploadCard key={k.kind} k={k} />)}</div>
-      <Card title="Upload history" className="mt-6" flush>
-        <Table head={['Uploaded on', 'Type of file', 'File name', 'Uploaded by', 'Rows accepted / rows in file', 'Rows with problems', '']} exportName="Upload history">
-          {history.data?.map((b) => (
-            <tr key={b.id}><Td>{new Date(b.created_at).toLocaleString()}</Td><Td>{b.kind.replace('_', ' ')}</Td><Td className="max-w-[220px] truncate">{b.filename}</Td>
-              <Td>{b.uploaded_by}</Td><Td className="tabular">{b.rows_ok}/{b.rows_total}</Td><Td className={cx('tabular', b.rows_error > 0 && 'text-roof-600')}>{b.rows_error}</Td>
-              <Td>{b.rows_error > 0 && !!b.errors?.length && <Button small variant="ghost" onClick={() => setProblems(b)}>See problems</Button>}</Td></tr>
-          ))}
-        </Table>
+      <Card
+        title="Upload history"
+        className="mt-6"
+        flush
+        actions={
+          hasHistory ? (
+            <ExportBar
+              name="Upload history"
+              className="!p-0"
+              header={['Uploaded on', 'Type of file', 'File name', 'Uploaded by', 'Rows accepted / rows in file', 'Rows with problems']}
+              rows={() =>
+                (history.data ?? []).map((b) => [
+                  new Date(b.created_at).toLocaleString(),
+                  b.kind.replace('_', ' '),
+                  b.filename,
+                  b.uploaded_by,
+                  `${b.rows_ok}/${b.rows_total}`,
+                  b.rows_error,
+                ])
+              }
+            />
+          ) : undefined
+        }
+      >
+        {history.isLoading ? (
+          <div className="p-5">
+            <Skeleton className="h-16" />
+          </div>
+        ) : !hasHistory ? (
+          <EmptyState
+            icon={<UploadCloud size={22} />}
+            title="No upload history yet."
+            hint="Uploaded files and their check results will be kept in the history here."
+          />
+        ) : (
+          <Table
+            head={['Uploaded on', 'Type of file', 'File name', 'Uploaded by', 'Rows accepted / rows in file', 'Rows with problems', '']}
+            maxHeight="max-h-[min(380px,50vh)]"
+          >
+            {history.data?.map((b) => (
+              <tr key={b.id}><Td>{new Date(b.created_at).toLocaleString()}</Td><Td>{b.kind.replace('_', ' ')}</Td><Td className="max-w-[220px] truncate">{b.filename}</Td>
+                <Td>{b.uploaded_by}</Td><Td className="tabular">{b.rows_ok}/{b.rows_total}</Td><Td className={cx('tabular', b.rows_error > 0 && 'text-roof-600')}>{b.rows_error}</Td>
+                <Td>{b.rows_error > 0 && !!b.errors?.length && <Button small variant="ghost" onClick={() => setProblems(b)}>See problems</Button>}</Td></tr>
+            ))}
+          </Table>
+        )}
       </Card>
       {problems && (
         <Dialog wide title={`Problems in ${problems.filename}`} onClose={() => setProblems(null)}>

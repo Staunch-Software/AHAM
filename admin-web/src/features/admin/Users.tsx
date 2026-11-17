@@ -101,7 +101,7 @@ export default function Users() {
   return (
     <>
       <PageTitle subtitle="Most people come in through the roster upload. Each role signs in at one portal only." actions={<Button onClick={() => setEditing('new')}><Plus size={16} aria-hidden="true" />Add a person</Button>}>Users & roles</PageTitle>
-      <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_240px]">
+      <div className="mb-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_240px]">
         <Input placeholder="Search name, Emp ID or email" value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} />
         <Select aria-label="Role" value={role} onChange={(e) => { setRole(e.target.value); setPage(1) }}><option value="">All roles</option>{roles?.roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</Select>
       </div>
@@ -109,7 +109,7 @@ export default function Users() {
       <Card flush>
         {isLoading || !data ? <div className="space-y-2 p-5">{Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-10" />)}</div>
           : data.items.length === 0 ? <EmptyState icon={<UserCog size={20} />} title="No one found." /> : (
-            <Table head={['Person', 'Role', 'Portal', 'Placed in', 'Status', '']} exportName="Users and roles"
+            <Table head={['Person', 'Role', 'Portal', 'Placed in', 'Status', '']} exportName="Users and roles" maxHeight="max-h-[calc(100vh-20rem)]"
               exportAll={async () => (await allPages<Employee>('/employees', { q: q || undefined, role: role || undefined })).map((u) => {
                 const r = roleDef(u.role)
                 return [`${u.full_name} (${u.employee_code})${u.email ? ` · ${u.email}` : ''}`, `${r?.label ?? u.role}${u.designation ? ` · ${u.designation}` : ''}`,

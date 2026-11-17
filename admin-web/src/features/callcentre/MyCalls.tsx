@@ -34,7 +34,7 @@ export default function MyCalls() {
     <>
       <PageTitle subtitle={data ? `${items.length} to call · ${data.today}.${lim ? ` Lead: ${lim.tries_per_day_lead} tries a day, up to ${lim.max_unanswered_lead} unanswered. DSA/CP: ${lim.tries_per_day_dsa} try, one day.` : ''}` : 'Today’s list'}
         actions={isMaster && (
-          <Select aria-label="Caller" value={caller} onChange={(e) => setCaller(e.target.value)} className="w-auto">
+          <Select aria-label="Caller" value={caller} onChange={(e) => setCaller(e.target.value)} className="w-52 sm:w-60">
             <option value="">My own list</option>{callers?.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
           </Select>
         )}>
