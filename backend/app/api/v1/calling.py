@@ -1,8 +1,9 @@
 """Call-centre portal (sections 5-8, 13.3): the daily run, callers' lists, recording calls, the lead card, the tracker."""
+import re
 import uuid
-from datetime import date
+from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -17,6 +18,7 @@ from app.models import (
     CallAllocation,
     CallAttempt,
     CallerDay,
+    Company,
     FollowupTracker,
     LeadCard,
     Region,
@@ -24,7 +26,9 @@ from app.models import (
     SelectionRun,
     User,
 )
+from app.services.periods import tz_of
 from app.services.reference import audit
+from app.services.sankalp import call_sheet as CS
 from app.services.sankalp import rules as R
 from app.services.sankalp.handoff import review_green_channel, save_tracker
 from app.services.sankalp.ops import company_today, record_attempt, run_selection, save_lead_card
@@ -157,6 +161,110 @@ async def list_runs(user: User = Depends(require_manage), s: AsyncSession = Depe
                             .order_by(SelectionRun.started_at.desc()).limit(60))).all()
     return [{"id": str(r.id), "run_date": r.run_date, "started_at": r.started_at, "started_by": n or "Automatic",
              "counts": r.counts} for r, n in rows]
+
+
+CALL_TYPE = {"retry": "Retry", "followup": "Follow-up"}
+YES_NO = {True: "Yes", False: "No"}
+ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _call_type(a: CallAllocation, e: SankalpEntry) -> str:
+    if a.kind == "fresh":
+        return "New lead" if e.call_group == "lead" else "New DSA/CP"
+    if a.kind == "priority":
+        return f"PRIORITY ({e.priority_reason})" if e.priority_reason else "PRIORITY"
+    return CALL_TYPE.get(a.kind, a.kind)
+
+
+def _history(before: list[CallAttempt], names: dict) -> str:
+    """The calls before the sheet's day, in one cell: how many, and the last one."""
+    if not before:
+        return ""
+    t = before[-1]
+    return (f"{len(before)} earlier {'try' if len(before) == 1 else 'tries'} · last {t.call_date:%d-%b} {t.slot}: "
+            f"{t.outcome} ({names.get(t.caller_id, '')}){f' → {t.row_status}' if t.row_status else ''}")
+
+
+@router.get("/calls/call-sheet.xlsx")
+async def call_sheet(day: date | None = None, caller_id: uuid.UUID | None = None, user: User = Depends(require_work),
+                     s: AsyncSession = Depends(get_session)):
+    """The callers' lists for a day as one Excel file, one sheet per caller, in the layout of the call sheets the
+    Master owner hands out today: lead details, the tries and answers recorded in the app, and the lead card. The
+    Master owner gets every caller (or the one asked for, plus the work with no caller when none is asked for);
+    a caller gets their own."""
+    today = await company_today(s, user.company_id)
+    day = day or today
+    if user.role != "master_owner":
+        caller_id = user.id
+    q = select(CallAllocation).where(CallAllocation.company_id == user.company_id, CallAllocation.run_date == day)
+    if caller_id:
+        q = q.where(CallAllocation.caller_id == caller_id)
+    allocs: dict = {}
+    for a in (await s.execute(q.order_by(CallAllocation.created_at))).scalars().all():
+        allocs[(a.caller_id, a.entry_id)] = a  # one row per entry on a list, the latest allocation of the day
+    ids = list({e for _, e in allocs} or {uuid.uuid4()})
+    rows = {r[0].id: r for r in (await s.execute(
+        select(SankalpEntry, User.full_name, Branch.name).join(User, User.id == SankalpEntry.so_user_id)
+        .join(Branch, Branch.id == SankalpEntry.branch_id).where(SankalpEntry.id.in_(ids)))).all()}
+    attempts: dict = {}
+    for t in (await s.execute(select(CallAttempt).where(CallAttempt.entry_id.in_(ids))
+                              .order_by(CallAttempt.created_at))).scalars().all():
+        attempts.setdefault(t.entry_id, []).append(t)
+    cards = {c.entry_id: c for c in (await s.execute(select(LeadCard).where(LeadCard.entry_id.in_(ids)))).scalars().all()}
+    people = {caller_id} | {c for c, _ in allocs} | {t.caller_id for ts in attempts.values() for t in ts}
+    names = dict((await s.execute(select(User.id, User.full_name).where(
+        User.id.in_({p for p in people if p} or {uuid.uuid4()})))).all())
+    branch_names = dict((await s.execute(select(Branch.id, Branch.name).where(
+        Branch.id.in_({c.handling_branch_id for c in cards.values() if c.handling_branch_id} or {uuid.uuid4()})))).all())
+    cfg = await load_settings(s, user.company_id)
+
+    def row(a: CallAllocation) -> CS.SheetRow:
+        e, so_name, branch = rows[a.entry_id]
+        mine = attempts.get(e.id, [])
+        on_day = [t for t in mine if t.call_date == day][:3]
+        talked = [t for t in on_day if t.outcome == R.CONNECTED and t.answers]
+        ans = talked[-1].answers if talked else {}
+        callback = next((t.next_date for t in reversed(on_day) if t.next_date), None)
+        card = cards.get(e.id)
+        d = card.data if card else {}
+        tries = [x for t in on_day for x in (t.slot, t.outcome)] + [None] * (6 - 2 * len(on_day))
+        vehicle = d.get("vehicle")
+        cells = [
+            names.get(a.caller_id, "No caller"), day, e.entry_code, _call_type(a, e), R.CATEGORIES.get(e.category),
+            "Lead" if e.call_group == "lead" else "DSA/CP", e.entry_date, so_name, branch, e.person_name, e.phone,
+            e.description, cfg.max_unanswered_lead - e.unanswered_count if e.call_group == "lead" else None,
+            e.callback_date, _history([t for t in mine if t.call_date < day], names),
+            *tries, ans.get("dsa_rag"), ans.get("needs_home_loan"), ans.get("name_check"), ans.get("name_given"),
+            ans.get("visit"), ans.get("relationship"), ans.get("loan_need"), ans.get("timeline"), ans.get("income"),
+            ans.get("documents"), ans.get("next_step"), ans.get("next_date") or callback, ans.get("purpose"),
+            ans.get("own_contribution"), ans.get("remarks"), card.lead_id if card else None,
+            branch_names.get(card.handling_branch_id) if card else None, d.get("age"), d.get("date_of_birth"),
+            d.get("address"), d.get("property_pincode"), d.get("business_pincode"), d.get("city"),
+            YES_NO.get(d.get("payslip_or_itr")), d.get("job_profile"), d.get("individual_monthly_income"),
+            d.get("family_monthly_income"),
+            None if vehicle is None else (f"Yes – {d['vehicle_type']}" if vehicle and d.get("vehicle_type") else YES_NO[vehicle]),
+            d.get("cibil_score"), YES_NO.get(d.get("bounce_last_6_months")), d.get("property_owner"),
+            d.get("property_area"), d.get("approved_property"), d.get("loan_purpose"),
+            card.loan_requirement if card else None, d.get("property_type"),
+        ]
+        # dates kept as text in the answers and the card ("2026-10-24") become real dates in Excel
+        cells = [date.fromisoformat(v) if isinstance(v, str) and ISO_DAY.fullmatch(v) else v for v in cells]
+        return CS.SheetRow(cells, e.call_group, ans.get("needs_home_loan") == "Yes")
+
+    by_caller: dict = {}
+    for (c, _), a in allocs.items():
+        by_caller.setdefault(c, []).append(a)
+    if caller_id and caller_id not in by_caller:
+        by_caller[caller_id] = []
+    order = sorted(by_caller, key=lambda c: (c is None, names.get(c, "")))
+    sheets = [(names.get(c, "No caller"), [row(a) for a in sorted(
+        by_caller[c], key=lambda a: (KIND_ORDER.get(a.kind, 9), rows[a.entry_id][0].submitted_at_device,
+                                     rows[a.entry_id][0].entry_code))]) for c in order]
+    tz = tz_of((await s.get(Company, user.company_id)).timezone)
+    data = CS.build(day, sheets, cfg.max_unanswered_lead, datetime.now(tz))
+    who = re.sub(r"[^A-Za-z0-9]+", "_", names.get(caller_id, "")).strip("_") if caller_id else "all_callers"
+    return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="call_sheet_{who}_{day}.xlsx"'})
 
 
 class CallerDayItem(BaseModel):

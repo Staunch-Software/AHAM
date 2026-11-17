@@ -3,7 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { isSunday, parseWhole, rupeesInWords } from '../src/services/format'
-import { FakeEventSource, handlers, installApiMock, renderApp } from './helpers'
+import { calls, FakeEventSource, handlers, installApiMock, renderApp } from './helpers'
 
 beforeEach(() => {
   FakeEventSource.instances = []
@@ -185,4 +185,21 @@ test('saving a new caller for a branch after the run says how many new entries w
   await screen.findByText('Nellore')
   await userEvent.click(screen.getByRole('button', { name: 'Save' }))
   expect(await screen.findByRole('status')).toHaveTextContent('13 new entries not yet called went to the caller now set for their branch')
+})
+
+test('the Master owner downloads the call sheets of the day: every caller, or one', async () => {
+  const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+  installApiMock('master_owner', {
+    '/calls/caller-days': { day: today, items: [{ branch_id: 'b1', branch: 'Vijayawada', region: 'AP & TG', caller_id: null }] },
+    '/calls/runs': [],
+    '/calls/allocations': { callers: [{ id: 'c1', name: 'Divya S', active: true, open: 5, attempts_today: 0, first_try_overdue: 0 }], unassigned: 0, first_try_overdue: 0, items: [] },
+  })
+  renderApp('/callcentre/run')
+  await userEvent.click(await screen.findByRole('button', { name: 'Call sheet of Divya S' }))
+  await waitFor(() => expect(calls.filter((c) => c.url === '/calls/call-sheet.xlsx').at(-1)?.cfg.params).toEqual({ day: today, caller_id: 'c1' }))
+  await userEvent.click(screen.getByRole('button', { name: 'All call sheets (Excel)' }))
+  await waitFor(() => expect(calls.filter((c) => c.url === '/calls/call-sheet.xlsx').at(-1)?.cfg.params).toEqual({ day: today }))
+  // the caller-of-the-day table can be exported too
+  const days = screen.getByText('Vijayawada').closest('table')!.parentElement!.parentElement!
+  expect(within(days).getByText('Export:')).toBeInTheDocument()
 })

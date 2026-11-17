@@ -734,7 +734,7 @@ Worked out by `engine.derive` after every event; "first validation" by `ops.reco
 - **Validated on** and **Counts as Sankalp success** (section 11.3) are stored as their own fields, apart from the
   status.
 - The **Takeoff export** (HR & Admin, CSV for a date range) carries, per entry: Entry ID, credited SO, branch,
-  region, dates, category, phone, selection, status, RAG, repeat entry by same SO, customer validated, first
+  region, dates, category, mobile number, current status (one), RAG, repeat entry by same SO, customer validated, first
   validation for this number, validated on, lead outcome, TCS ID, login date, Sankalp success.
 - **Money:** not calculated; the ₹60 / 5-a-day rule is not in the code ([Aham to decide]).
 
