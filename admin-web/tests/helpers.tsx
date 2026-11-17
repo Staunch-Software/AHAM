@@ -121,7 +121,7 @@ vi.mock('../src/services/api', () => {
       clear: () => { store.access = null; store.refresh = null },
     },
     refreshSession: async () => {},
-    download: async () => {},
+    download: async (url: string, params: Record<string, unknown>, filename: string) => { calls.push({ method: 'download', url, body: filename, cfg: { params } }) },
     errorMessage: (e: any) => e?.response?.data?.detail?.message ?? e?.response?.data?.detail ?? e?.message ?? 'error',
   }
 })

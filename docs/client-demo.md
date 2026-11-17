@@ -608,7 +608,7 @@ not called: spoken within 30 days). Show both: only Sai Teja's is validated.
 
 ### Step 4: the file for the incentive team
 Monitor (HR & Admin) → **Takeoff export** → pick last week → **Download CSV**. One row per entry: Entry ID, credited
-SO, branch, dates, status, RAG, "Repeat entry by same SO", the four flags, lead outcome, TCS ID, login date. The page
+SO, branch, dates, mobile number, current status, RAG, "Repeat entry by same SO", the four flags, lead outcome, TCS ID, login date. The page
 explains each flag. Last week: 384 entries, 121 validated, 10 Sankalp successes (before the live upload).
 
 **The payout rule** (₹60 per validated lead from 5 a day) is not built; the app only gives the flags. It is on the

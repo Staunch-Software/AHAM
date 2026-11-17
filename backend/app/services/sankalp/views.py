@@ -8,6 +8,13 @@ from app.services.sankalp import engine as E
 from app.services.sankalp import rules as R
 
 
+def current_status(e: SankalpEntry) -> str:
+    """The one current status of an entry, as every screen and file shows it (earlier statuses stay in the history)."""
+    return E.display_status(status=e.status, selection_status=e.selection_status, call_group=e.call_group,
+                            lead_outcome=e.lead_outcome, unanswered=e.unanswered_count, callback_date=e.callback_date,
+                            priority_reason=e.priority_reason if e.priority else None)
+
+
 async def _names(s: AsyncSession, ids) -> dict:
     ids = {i for i in ids if i}
     if not ids:

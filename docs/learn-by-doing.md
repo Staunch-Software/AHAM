@@ -226,6 +226,11 @@ name, a new mobile number → Submit. The Entry ID appears at once (`AHFL90001-<
 - **Divya's list:** Nagarjuna Rao, Revathi Kumari, Balaji Constructions, Prasad Varma, Lakshmi Prasanna (all
   Vijayawada). **Farhan's list:** Venkata Rao, Sri Sai Hardware, Gopi Krishna (Guntur).
 - Open **Entries**: the two not-called entries show their reason as their current status.
+- **Callers → Call sheet** (next to Divya S) downloads her list as Excel, laid out like the call sheets handed out
+  today ("Pooja Sankalp 5.xlsx"): lead details, then the tries and answers, then the lead card. **All call sheets
+  (Excel)** gives one sheet per caller (and "No caller" for unassigned work). Download it again after Step 7: the
+  tries, answers and lead IDs recorded in the app are filled in. The calls are still recorded in the app; the file
+  is a copy to read and share, not something to upload back.
 
 ### Step 7: the calls (Divya S in a private window; then Farhan Ali)
 Open **My calls**, click a name to open the call screen, pick the time slot and outcome, **Save try**.

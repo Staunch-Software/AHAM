@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRightLeft, Copy, Play, Save, UserPlus } from 'lucide-react'
+import { ArrowRightLeft, Copy, FileSpreadsheet, Play, Save, UserPlus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, Card, EmptyState, ErrorBox, Input, Note, PageTitle, Select, Skeleton, StatCard, Table, Td } from '../../components/ui'
-import { api, errorMessage } from '../../services/api'
+import { Button, Card, EmptyState, ErrorBox, ExportBar, Input, Note, PageTitle, Select, Skeleton, StatCard, Table, Td } from '../../components/ui'
+import { api, download, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
 import { useCallers } from '../../services/meta'
 import type { CallRow } from '../../types'
@@ -54,7 +54,11 @@ export default function DailyRun() {
   const assign = useMutation({ mutationFn: ({ id, caller }: { id: string; caller: string }) => api.post(`/calls/allocations/${id}/assign`, { caller_id: caller }), onSuccess: refresh })
   // A caller is off: their whole open list (retries and PRIORITY calls too) goes to another caller for the day.
   const move = useMutation({ mutationFn: async ({ from, to }: { from: string; to: string }) => (await api.post<{ moved: number }>('/calls/allocations/move', { from_caller_id: from, to_caller_id: to })).data, onSuccess: refresh })
+  // the lists of the day as Excel, in the layout of the call sheets handed out today: one sheet per caller
+  const sheet = useMutation({ mutationFn: (c?: { id: string; name: string }) => download('/calls/call-sheet.xlsx',
+    c ? { day, caller_id: c.id } : { day }, `call_sheet_${c ? c.name.replace(/\W+/g, '_') : 'all_callers'}_${day}.xlsx`) })
   const activeCallers = callers?.filter((c) => c.status === 'active') ?? []
+  const callerName = (id?: string | null) => callers?.find((c) => c.id === id)?.full_name ?? 'No caller'
   const setAll = (caller: string) => setPick(Object.fromEntries(Object.keys(pick).map((b) => [b, caller])))
   const dayRuns = (runs.data ?? []).filter((r) => r.run_date === day && did(r.counts))
   const ranNow = run.data?.run_date === day ? run.data : null
@@ -64,7 +68,7 @@ export default function DailyRun() {
         actions={<Input type="date" aria-label="Run date" value={day} max={isoToday()} onChange={(e) => { setDay(e.target.value); setMoved(null) }} className="w-auto" />}>
         Daily run & allocation
       </PageTitle>
-      <ErrorBox error={[save.error, copy.error, run.error, assign.error, move.error].map((e) => e && errorMessage(e)).find(Boolean) ?? null} />
+      <ErrorBox error={[save.error, copy.error, run.error, assign.error, move.error, sheet.error].map((e) => e && errorMessage(e)).find(Boolean) ?? null} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <Card title="1 · Caller of the day per branch" subtitle="New entries of a branch go to its caller of the day"
@@ -79,6 +83,8 @@ export default function DailyRun() {
                   Saved.{moved ? ` ${moved} new ${moved === 1 ? 'entry' : 'entries'} not yet called went to the caller now set for ${moved === 1 ? 'its' : 'their'} branch. Retries stay with their first caller.` : ''}
                 </p>
               )}
+              <ExportBar name={`Callers of the day ${day}`} header={['Branch', 'Region', 'Caller of the day']} className="-mt-2 px-0"
+                rows={() => (days.data?.items ?? []).map((b) => [b.branch, b.region ?? '', callerName(pick[b.branch_id])])} />
               <div className="mb-3 flex items-center gap-2 text-xs text-slate-500">Set all to
                 <Select className="w-auto py-1 text-xs" value="" onChange={(e) => e.target.value && setAll(e.target.value)}><option value="">choose…</option>{activeCallers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}</Select>
               </div>
@@ -127,7 +133,8 @@ export default function DailyRun() {
         </div>
       </div>
 
-      <Card title="Callers" subtitle="A caller who is off today: move their open list (retries and PRIORITY calls too) to another caller" className="mt-6" flush>
+      <Card title="Callers" subtitle={`A caller who is off today: move their open list (retries and PRIORITY calls too) to another caller. Call sheet: that caller's list for ${day} in Excel, as the hand-made call sheets, with the tries, answers and lead card recorded so far.`} className="mt-6" flush
+        actions={<Button small variant="secondary" disabled={sheet.isPending} onClick={() => sheet.mutate(undefined)}><FileSpreadsheet size={14} aria-hidden="true" />All call sheets (Excel)</Button>}>
         {move.data && <p className="px-5 pt-3 text-sm text-emerald-700" role="status">{move.data.moved} moved.</p>}
         <Table head={['Caller', 'Still to call today', 'Not called within the target (overdue)', 'Calls made today', 'Move today’s list to', '']} exportName="Callers today">
           {overview.data?.callers.map((c) => (
@@ -138,7 +145,9 @@ export default function DailyRun() {
                   onChange={(e) => e.target.value && move.mutate({ from: c.id, to: e.target.value })}>
                   <option value="">Choose…</option>{activeCallers.filter((x) => x.id !== c.id).map((x) => <option key={x.id} value={x.id}>{x.full_name}</option>)}
                 </Select>) : <span className="inline-flex items-center gap-1 text-xs text-slate-400"><ArrowRightLeft size={12} aria-hidden="true" />nothing open</span>}</Td>
-              <Td><Link className="text-xs font-semibold text-brand-700 hover:underline" to={`${path('calls')}`}>Lists</Link></Td></tr>
+              <Td className="whitespace-nowrap"><Link className="text-xs font-semibold text-brand-700 hover:underline" to={`${path('calls')}`}>Lists</Link>
+                <button type="button" className="ml-3 text-xs font-semibold text-brand-700 hover:underline disabled:opacity-50" disabled={sheet.isPending}
+                  aria-label={`Call sheet of ${c.name}`} onClick={() => sheet.mutate({ id: c.id, name: c.name })}>Call sheet</button></Td></tr>
           ))}
         </Table>
       </Card>

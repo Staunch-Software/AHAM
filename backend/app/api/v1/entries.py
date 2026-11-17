@@ -32,9 +32,9 @@ from app.services.geocoding import place_status_for_api
 from app.services.periods import tz_of
 from app.services.phone import clean_phone, is_valid_phone
 from app.services.reference import holiday_set
-from app.services.sankalp import engine, rules
+from app.services.sankalp import rules
 from app.services.sankalp.ops import company_today
-from app.services.sankalp.views import calling_detail
+from app.services.sankalp.views import calling_detail, current_status
 from app.services.scope import entry_scope
 from app.services.settings import load_settings
 from app.services.tabular import parse_date
@@ -277,10 +277,7 @@ def entry_row(e: SankalpEntry, so: User | None, branch: Branch | None, region: R
         "submitted_at_device": e.submitted_at_device, "received_at_server": e.received_at_server,
         "entry_date": e.entry_date, "count_date": e.count_date, "device_time_suspect": e.device_time_suspect,
         "selection_status": e.selection_status, "status": e.status, "rag": effective_rag(e),
-        "current_status": engine.display_status(status=e.status, selection_status=e.selection_status,
-                                                call_group=e.call_group, lead_outcome=e.lead_outcome,
-                                                unanswered=e.unanswered_count, callback_date=e.callback_date,
-                                                priority_reason=e.priority_reason if e.priority else None),
+        "current_status": current_status(e),
         "rag_overridden": e.rag_override is not None, "priority": e.priority, "priority_reason": e.priority_reason,
         "handling_branch_id": str(e.work_branch_id) if e.work_branch_id else None,
         "expired_action": e.expired_action, "expired_on": e.expired_on,

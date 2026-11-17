@@ -16,6 +16,7 @@ from app.models import Attendance, AuditLog, Branch, CallAttempt, Company, Regio
 from app.services.periods import period_bounds, tz_of
 from app.services.sankalp import rules as R
 from app.services.sankalp.ops import company_today
+from app.services.sankalp.views import current_status
 from app.services.scope import entry_scope, user_scope
 from app.services.settings import load_settings, load_settings_on
 
@@ -211,11 +212,11 @@ async def takeoff_csv(date_from: date, date_to: date, user: User = Depends(requi
     yn = lambda b: "Y" if b else "N"  # noqa: E731
     return _csv(f"sankalp_takeoff_{date_from}_{date_to}.csv",
                 ["Entry ID", "Emp ID (credited SO)", "SO name", "Branch", "Region", "Entry date", "Count date", "Category",
-                 "Phone", "Selection", "Status", "RAG", "Repeat entry by same SO", "Customer validated",
+                 "Mobile number", "Current status", "RAG", "Repeat entry by same SO", "Customer validated",
                  "First validation for this number", "Validated on", "Lead outcome", "TCS ID", "Login date",
                  "Counts as Sankalp success"],
                 [[e.entry_code, code, name, b, r, e.entry_date, e.count_date, R.CATEGORIES.get(e.category), e.phone,
-                  e.selection_status or "", e.status or "", R.RAG_LABELS.get(e.rag_override or e.rag), yn(e.selection_status == R.NC_REPEAT),
+                  current_status(e), R.RAG_LABELS.get(e.rag_override or e.rag), yn(e.selection_status == R.NC_REPEAT),
                   yn(e.customer_validated), yn(e.first_validation), e.validated_on or "", e.lead_outcome or "",
                   e.tcs_id or "", e.login_date or "", yn(e.sankalp_success)] for e, code, name, b, r in rows])
 

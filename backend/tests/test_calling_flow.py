@@ -136,8 +136,11 @@ async def test_entry_to_login_end_to_end(client, tenant_a, clock):
     await f.call("master", e["id"], R.RNR, expect=409)  # a logged-in lead is not called again
 
     exp = await client.get("/api/v1/takeoff/export.csv?date_from=2026-10-01&date_to=2026-10-31", headers=await f("monitor"))
-    line = next(x for x in exp.text.splitlines() if e["entry_code"] in x)
-    assert ",Y,Y,2026-10-22,Logged in,TCS0001,2026-10-25,Y" in line
+    head, *rows = exp.text.splitlines()
+    # one current status per entry, and the number named for what it is (client feedback)
+    assert ",Mobile number,Current status,RAG," in head and "Phone" not in head and "Selection" not in head
+    line = next(x for x in rows if e["entry_code"] in x)
+    assert ",Logged in,Not applicable,N,Y,Y,2026-10-22,Logged in,TCS0001,2026-10-25,Y" in line
     dash = (await client.get("/api/v1/dashboard?period=custom&date_from=2026-10-01&date_to=2026-10-31",
                              headers=await f("bm1"))).json()
     assert dash["totals"]["logged_in"] == 1 and dash["totals"]["validated"] == 1
@@ -442,3 +445,58 @@ async def test_reports_map_and_unassigned_work(client, tenant_a, clock):
                           headers=await f("bm3"))).json()
     assert m["total"] >= 1 and m["markers"][0]["lat"] == 16.5
     assert (await client.get("/api/v1/map/entries", headers=await f("caller1"))).status_code == 403
+
+
+async def test_call_sheet_is_each_callers_list_in_the_hand_made_layout(client, tenant_a, clock):
+    """The Master owner's Excel export of the day's lists, laid out as the call sheets handed out today
+    ("Pooja Sankalp 5.xlsx"): one sheet per caller, lead details, the tries and answers recorded, the lead card."""
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    f = Flow(client, tenant_a)
+    lead = await f.entry("so1")
+    dsa = await f.entry("so1", hhmm="11:00", phone="9876543211", category="dsa_connector")
+    await f.callers(clock.day, {"b1": "caller1"})
+    await f.run(clock.day)
+    await f.call("caller1", lead["id"], R.RNR)
+    await f.call("caller1", dsa["id"], R.CONNECTED, {"dsa_rag": "Green", "needs_home_loan": "No"}, slot="11-12")
+
+    r = await client.get(f"/api/v1/calls/call-sheet.xlsx?day={clock.day}", headers=await f("master"))
+    assert r.status_code == 200, r.text
+    assert 'filename="call_sheet_all_callers_2026-10-21.xlsx"' in r.headers["content-disposition"]
+    wb = load_workbook(BytesIO(r.content))
+    assert wb.sheetnames == ["Caller1"]
+    ws = wb["Caller1"]
+    assert (ws["A1"].value, ws["A2"].value, ws["B2"].value) == ("Takeoff lead call sheet", "Caller:", "Caller1")
+    head = [c.value for c in ws[4]]
+    assert head[:15] == ["Caller", "Call date", "Entry ID", "Call type", "Category", "Call group", "Entry date", "SO name",
+                         "Branch", "Person met", "Mobile number", "SO description", "Tries left (of 9)", "Callback due",
+                         "Past call-centre history"]
+    assert head[15:17] == ["Attempt 1 slot", "Attempt 1 outcome"] and head[36:38] == ["Lead ID", "Handling branch"]
+    assert "Phone" not in head and len(head) == 57
+    rows = [[c.value for c in ws[i]] for i in range(5, ws.max_row + 1)]
+    assert [x[2] for x in rows] == [lead["entry_code"], dsa["entry_code"]]  # in the order of the caller's list
+    L, D = rows
+    assert (L[0], L[3], L[4], L[5], L[10], L[12]) == ("Caller1", "New lead", "Lead", "Lead", "9876543210", 8)
+    assert (L[15], L[16], L[17]) == ("10-11", "Rang, no answer", None)  # RNR in plain words
+    assert (D[3], D[5], D[12], D[15], D[16], D[21], D[22]) == ("New DSA/CP", "DSA/CP", None, "11-12", R.CONNECTED,
+                                                                "Green", "No")
+    grey = lambda row, col: ws.cell(row, col).fill.fgColor.rgb.endswith("E5E7EB")  # noqa: E731
+    assert grey(6, 18) and grey(6, 24) and not grey(6, 22)  # DSA/CP: one try, no Lead questions
+    assert grey(5, 22) and not grey(5, 18) and not grey(5, 24)  # Lead: no DSA/CP questions
+
+    # the next day the earlier try is in the history column
+    clock.day = date(2026, 10, 22)
+    await f.run(clock.day)
+    nxt = load_workbook(BytesIO((await client.get(f"/api/v1/calls/call-sheet.xlsx?day={clock.day}",
+                                                   headers=await f("master"))).content))["Caller1"]
+    assert (nxt["C5"].value, nxt["D5"].value) == (lead["entry_code"], "Retry")
+    assert nxt["O5"].value.startswith("1 earlier try · last 21-Oct 10-11: Rang, no answer (Caller1) → In retry")
+
+    # a caller gets only their own list, whatever caller they ask for
+    own = await client.get(f"/api/v1/calls/call-sheet.xlsx?day=2026-10-21&caller_id={tenant_a['caller1_id']}",
+                           headers=await f("caller2"))
+    sheet = load_workbook(BytesIO(own.content))
+    assert sheet.sheetnames == ["Caller2"] and sheet["Caller2"]["A5"].value == "Nothing on this list for the day."
+    assert (await client.get("/api/v1/calls/call-sheet.xlsx", headers=await f("so1"))).status_code == 403
