@@ -504,12 +504,33 @@ async def get_settings(user: User = Depends(require_perm("irr.view")), s: AsyncS
     return (await load_config(s, user.company_id)).model_dump()
 
 
+async def _branch_lookup(s: AsyncSession, company_id: uuid.UUID, cfg: IrrConfig) -> dict[str, tuple]:
+    """Normalised branch name, code, or register spelling (IRR settings) -> (branch id, region id). A real branch name
+    or code always wins over a register spelling."""
+    branches: dict[str, tuple] = {}
+    for b in (await s.execute(select(Branch).where(Branch.company_id == company_id))).scalars().all():
+        branches[norm_header(b.name)] = branches[norm_header(b.code)] = (b.id, b.region_id)
+    for alias, target in cfg.branch_aliases.items():
+        place = branches.get(norm_header(target))
+        if place:
+            branches.setdefault(norm_header(alias), place)
+    return branches
+
+
 @router.put("/settings")
 async def put_settings(body: IrrConfig, user: User = Depends(require_perm("irr.manage")),
                        s: AsyncSession = Depends(get_session)):
-    """Saves the settings. Disbursements already uploaded under a product name follow its new class."""
+    """Saves the settings. Disbursements already uploaded under a product name follow its new class. A register branch
+    spelling added or changed here must point at a branch of Organization (one that points nowhere is simply unused)."""
     row = await s.get(IrrSettings, user.company_id)
     old = IrrConfig.model_validate(row.data).model_dump() if row else IrrConfig().model_dump()
+    known = {norm_header(x) for b in (await s.execute(select(Branch).where(Branch.company_id == user.company_id)))
+             .scalars().all() for x in (b.name, b.code)}
+    unknown = [f"'{a}' → '{t}'" for a, t in body.branch_aliases.items()
+               if old["branch_aliases"].get(a) != t and norm_header(t) not in known]
+    if unknown:
+        raise HTTPException(422, f"No branch has this name or code: {', '.join(unknown)}. Choose a branch of "
+                                 "HR & Admin > Organization for each branch name in the register")
     data = body.model_dump()
     if row is None:
         s.add(IrrSettings(company_id=user.company_id, data=data, updated_by=user.id))
@@ -568,11 +589,9 @@ async def upload_register(file: UploadFile = File(...), dry_run: bool = Form(Fal
         raise HTTPException(422, "The file has a heading row but no disbursements below it")
     cid = user.company_id
     cfg = await load_config(s, cid)
-    branches: dict[str, tuple] = {}
-    for b in (await s.execute(select(Branch).where(Branch.company_id == cid))).scalars().all():
-        branches[norm_header(b.name)] = branches[norm_header(b.code)] = (b.id, b.region_id)
+    branches = await _branch_lookup(s, cid, cfg)
     parsed = register.parse_register(rows, cols, register.Lookups(branches, cfg.class_by_key(),
-                                                                  await company_today(s, cid)))
+                                                                  await company_today(s, cid), cfg.tenure_unit))
     keys = [r["dedup_key"] for r in parsed.records]
     existing: set[str] = set()
     for i in range(0, len(keys), 5000):
@@ -581,9 +600,11 @@ async def upload_register(file: UploadFile = File(...), dry_run: bool = Form(Fal
     error_rows = len({e["row"] for e in parsed.errors})
     summary = {"rows": len(rows), "new": len(keys) - len(existing), "replaced": len(existing),
                "excluded": sum(r["excluded"] for r in parsed.records),
-               "exceptions": sum(1 for r in parsed.records if r["exception"]), "errors": error_rows}
+               "exceptions": sum(1 for r in parsed.records if r["exception"]), "errors": error_rows,
+               "no_account": sum(1 for r in parsed.records if not r["loan_account"])}
     columns = {register.LABELS[f]: names[0] for f, names in cols.items() if names}
-    result = {"dry_run": dry_run, "summary": summary, "errors": parsed.errors[:5000], "columns": columns}
+    result = {"dry_run": dry_run, "summary": summary, "errors": parsed.errors[:5000], "columns": columns,
+              "notes": parsed.notes}
     if dry_run:
         return result
     batch = ImportBatch(company_id=cid, kind="disbursement", filename=filename[:255], uploaded_by=user.id,

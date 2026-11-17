@@ -66,7 +66,9 @@ test('the IRR report shows No. and IRR per period, a dash when there is nothing,
 })
 
 test('upload problems are a table of row, column, value found and problem, with a download', async () => {
-  signIn('mis', ['irr.view', 'irr.manage'], { '/irr/uploads': [] })
+  const batch = { id: 'u1', filename: 'oct.csv', uploaded_by: 'Indira N', created_at: '2026-11-05T10:00:00Z', rows_total: 8, rows_error: 0,
+    summary: { rows: 8, new: 8, replaced: 0, excluded: 0, exceptions: 0, errors: 0 }, errors: [] }
+  signIn('mis', ['irr.view', 'irr.manage'], { '/irr/uploads': [batch] })
   handlers.post = (url) => {
     if (url === '/irr/disbursements') {
       return { data: {
@@ -82,6 +84,9 @@ test('upload problems are a table of row, column, value found and problem, with 
   const nav = await screen.findByRole('navigation', { name: 'Main' })
   expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(
     expect.arrayContaining(['IRR report', 'Disbursement register', 'IRR exceptions', 'IRR settings']))
+  // every table on a screen can be exported, the upload history too
+  const history = (await screen.findByText('oct.csv')).closest('table')!.parentElement!
+  expect(within(history).getByText('Export:')).toBeInTheDocument()
   const file = new File(['x'], 'register.csv', { type: 'text/csv' })
   await userEvent.upload(await screen.findByLabelText('Disbursement register file'), file)
   await userEvent.click(screen.getByRole('button', { name: 'Check first' }))
@@ -89,7 +94,7 @@ test('upload problems are a table of row, column, value found and problem, with 
   expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Row', 'Column', 'Value found', 'Problem'])
   const cells = within(table).getAllByRole('cell').map((c) => c.textContent)
   expect(cells).toEqual(['7', 'Date of Disbursement', '31/02/2026', 'Not a real date. Use DD-MM-YYYY, for example 05-11-2026'])
-  expect(screen.getByRole('button', { name: 'Download errors' })).toBeInTheDocument()
+  expect(within(table).getByText('Export:')).toBeInTheDocument()  // CSV and Excel, like every table
   expect(screen.getByText('Check only: nothing was saved.')).toBeInTheDocument()
   expect(screen.getByText(/Disbursement date ← “Date of Disbursement”/)).toBeInTheDocument()
   await waitFor(() => expect(calls.find((c) => c.url === '/irr/disbursements')?.body.get('dry_run')).toBe('true'))

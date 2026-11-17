@@ -22,7 +22,7 @@ function CorrectDialog({ item, onClose }: { item: Item; onClose: () => void }) {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['irr'] }); onClose() },
   })
   return (
-    <Dialog title={`Correct ${item.loan_account}`} onClose={onClose}>
+    <Dialog title={`Correct ${item.loan_account || 'a disbursement with no loan account'}`} onClose={onClose}>
       <p className="mb-4 text-sm text-slate-600">
         Disbursed {fmtDay(item.disbursement_date)} at {item.branch}, ₹{fmtNum(item.amount)} ({item.product}). Problem: {item.problem ?? 'none (already corrected)'}.
         Once tenure and ROI are both above 0 the disbursement counts in the IRR. The change is recorded in the audit log; a later upload of the same row replaces it.
@@ -69,7 +69,7 @@ export default function IrrExceptions() {
               <Table head={['Loan account', 'Date', 'Branch', 'Product', 'Amount (₹)', 'Tenure (months)', 'ROI (%)', 'Problem', '']}>
                 {data.items.map((i) => (
                   <tr key={i.id}>
-                    <Td className="whitespace-nowrap font-medium text-slate-900">{i.loan_account}{i.disbursement_ref && <span className="ml-1 text-xs text-slate-500">#{i.disbursement_ref}</span>}</Td>
+                    <Td className="whitespace-nowrap font-medium text-slate-900">{i.loan_account || <span className="font-normal text-slate-400">no loan account</span>}{i.disbursement_ref && <span className="ml-1 text-xs text-slate-500">#{i.disbursement_ref}</span>}</Td>
                     <Td className="tabular whitespace-nowrap">{fmtDay(i.disbursement_date)}</Td>
                     <Td className="whitespace-nowrap">{i.branch}<div className="text-xs text-slate-500">{i.region}</div></Td>
                     <Td>{i.product} <span className="text-xs text-slate-500">({i.product_class})</span></Td>

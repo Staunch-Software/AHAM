@@ -1,8 +1,7 @@
 import { Download, FileSpreadsheet } from 'lucide-react'
 import { ReactNode, useState } from 'react'
-import { Button, Table, Td } from '../../components/ui'
+import { Button, ExportBar, Table, Td } from '../../components/ui'
 import { download, errorMessage } from '../../services/api'
-import { csvCell } from '../../services/format'
 
 export type Period = 'TD' | 'MTD' | 'YTD'
 export type ProductClass = 'HL' | 'NHL'
@@ -67,27 +66,20 @@ export function GroupedTable({ lead, groups, children }: { lead: string[]; group
   )
 }
 
-export function saveCsv(filename: string, rows: unknown[][]) {
-  const blob = new Blob(['﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\n')], { type: 'text/csv' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = filename
-  a.click()
-}
+export const ERROR_HEADER = ['Row', 'Column', 'Value found', 'Problem']
+export const errorCells = (errors: RowError[]) => errors.map((e) => [e.row, e.column, e.value, e.message])
 
-/** Every problem of an upload as a table, with a CSV of the same rows to fix the file from. */
-export function RowErrors({ errors, filename = 'disbursement_register_errors.csv' }: { errors: RowError[]; filename?: string }) {
+/** Every problem of an upload as a table, with CSV and Excel of the same rows to fix the file from. */
+export function RowErrors({ errors, name = 'Disbursement register problems' }: { errors: RowError[]; name?: string }) {
   if (!errors.length) return null
   const rows = new Set(errors.map((e) => e.row)).size
-  const save = () => saveCsv(filename, [['Row', 'Column', 'Value found', 'Problem'], ...errors.map((e) => [e.row, e.column, e.value, e.message])])
   return (
     <div className="mt-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <p className="font-medium text-roof-700">{errors.length} problem{errors.length > 1 ? 's' : ''} in {rows} row{rows > 1 ? 's' : ''}. These rows are not saved: correct them in the file and upload it again.</p>
-        <Button small variant="secondary" onClick={save}><Download size={14} aria-hidden="true" />Download errors</Button>
       </div>
       <div className="max-h-80 overflow-y-auto rounded-lg border border-slate-200 bg-white" data-testid="row-errors">
-        <Table head={['Row', 'Column', 'Value found', 'Problem']}>
+        <Table head={ERROR_HEADER} exportName={name} exportAll={async () => errorCells(errors)}>
           {errors.map((e, i) => (
             <tr key={i}>
               <Td className="tabular">{e.row}</Td>

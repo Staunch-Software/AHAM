@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Download, FileSpreadsheet, TriangleAlert, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { Button, Card, cx, ErrorBox, Input, PageTitle, Select, Table, Td } from '../../components/ui'
+import { Button, Card, cx, ErrorBox, ExportBar, Input, PageTitle, Select, Table, Td } from '../../components/ui'
 import { api, download, errorMessage } from '../../services/api'
-import { ExportButtons, fmtDay, fmtIrr, fmtNum, RowError, RowErrors, saveCsv } from './shared'
+import { ERROR_HEADER, errorCells, ExportButtons, fmtDay, fmtIrr, fmtNum, RowError, RowErrors } from './shared'
 
-interface Summary { rows: number; new: number; replaced: number; excluded: number; exceptions: number; errors: number }
-interface Result { dry_run: boolean; summary: Summary; errors: RowError[]; columns: Record<string, string>; batch_id?: string }
+interface Summary { rows: number; new: number; replaced: number; excluded: number; exceptions: number; errors: number; no_account?: number }
+interface Result { dry_run: boolean; summary: Summary; errors: RowError[]; columns: Record<string, string>; notes?: string[]; batch_id?: string }
 interface Batch { id: string; filename: string; uploaded_by: string; created_at: string; rows_total: number; rows_error: number; summary: Summary | null; errors: RowError[] }
 interface ReconRow { label: string; code?: string; region?: string; rows: number; included: number; excluded: number; exceptions: number; amount: number; average_tenure: number | null; irr: number | null }
 type MonthRow = ReconRow & { tenure: number; denominator: number; weighted_roi: number }
@@ -15,6 +15,7 @@ interface Recon { from: string; to: string; decimals: number; branches: ReconRow
 const SUMMARY: [keyof Summary, string][] = [
   ['rows', 'Rows in the file'], ['new', 'New disbursements'], ['replaced', 'Replaced (uploaded before)'],
   ['excluded', 'Excluded (cancelled / reversed)'], ['exceptions', 'Exceptions (tenure or ROI missing, zero or negative)'], ['errors', 'Rows with errors (not saved)'],
+  ['no_account', 'Saved without a loan account'],
 ]
 const firstOfMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1, 12).toISOString().slice(0, 10) }
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
@@ -36,7 +37,7 @@ function UploadCard() {
   })
   const tooLarge = (send.error as { response?: { status?: number } } | null)?.response?.status === 413
   return (
-    <Card title="Upload the Disbursement Register" subtitle="CSV or Excel. One row per disbursement (tranche). Columns: Loan account number, Disbursement reference (optional), Disbursement date, Product, Branch (code or name), Disbursed amount, Tenure in months, ROI %, Status (optional), Customer name (optional). A row uploaded again replaces the earlier copy."
+    <Card title="Upload the Disbursement Register" subtitle="CSV or Excel. One row per disbursement (tranche). Columns: Loan account number, Disbursement reference (optional), Disbursement date, Product (or HL/NHL), Branch (code or name), Disbursed amount, Tenure (in months or years), ROI % (16 or 0.16), Status (optional), Customer name (optional). Aham's own register is read as it is. A row uploaded again replaces the earlier copy."
       actions={<div className="flex gap-1">
         <Button variant="ghost" small onClick={() => download('/irr/disbursements/template', { format: 'csv' }, 'disbursement_register_template.csv')}><Download size={14} aria-hidden="true" />Template (CSV)</Button>
         <Button variant="ghost" small onClick={() => download('/irr/disbursements/template', { format: 'xlsx' }, 'disbursement_register_template.xlsx')}><Download size={14} aria-hidden="true" />Template (Excel)</Button>
@@ -55,10 +56,15 @@ function UploadCard() {
           <p className="font-semibold text-brand-900">{result.dry_run ? 'Check only: nothing was saved.' : 'Uploaded.'}</p>
           <dl className="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
             {SUMMARY.map(([k, label]) => (
-              <div key={k} className="flex justify-between gap-3"><dt className="text-slate-600">{label}</dt><dd className={cx('tabular font-semibold', k === 'errors' && result.summary.errors > 0 ? 'text-roof-700' : 'text-slate-900')}>{result.summary[k]}</dd></div>
+              <div key={k} className="flex justify-between gap-3"><dt className="text-slate-600">{label}</dt><dd className={cx('tabular font-semibold', k === 'errors' && result.summary.errors > 0 ? 'text-roof-700' : 'text-slate-900')}>{result.summary[k] ?? 0}</dd></div>
             ))}
           </dl>
           <p className="mt-2 text-xs text-slate-500">Columns read: {Object.entries(result.columns).map(([want, got]) => (want === got ? want : `${want} ← “${got}”`)).join(' · ')}</p>
+          {!!result.notes?.length && (
+            <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-slate-600" aria-label="How the file was read">
+              {result.notes.map((n) => <li key={n}>{n}</li>)}
+            </ul>
+          )}
           <RowErrors errors={result.errors} />
         </div>
       )}
@@ -70,7 +76,8 @@ function History() {
   const history = useQuery({ queryKey: ['irr', 'uploads'], queryFn: async () => (await api.get<Batch[]>('/irr/uploads')).data })
   return (
     <Card title="Upload history" className="mt-6" flush>
-      <Table head={['When', 'File', 'By', 'Rows', 'New', 'Replaced', 'Excluded', 'Exceptions', 'Rows with errors', '']}>
+      <Table head={['When', 'File', 'By', 'Rows', 'New', 'Replaced', 'Excluded', 'Exceptions', 'Rows with errors', '']}
+        exportName={history.data?.length ? 'IRR upload history' : undefined}>
         {history.data?.map((b) => (
           <tr key={b.id}>
             <Td className="whitespace-nowrap">{new Date(b.created_at).toLocaleString()}</Td>
@@ -83,9 +90,7 @@ function History() {
             <Td className="tabular">{b.summary?.exceptions ?? '–'}</Td>
             <Td className={cx('tabular', b.rows_error > 0 && 'font-semibold text-roof-600')}>{b.rows_error}</Td>
             <Td>{b.errors.length > 0 && (
-              <Button small variant="ghost" onClick={() => saveCsv(`errors_${b.filename}.csv`, [['Row', 'Column', 'Value found', 'Problem'], ...b.errors.map((e) => [e.row, e.column, e.value, e.message])])}>
-                <Download size={14} aria-hidden="true" />Download errors
-              </Button>
+              <ExportBar name={`Problems in ${b.filename}`} header={ERROR_HEADER} rows={() => errorCells(b.errors)} className="justify-start px-0 py-0" />
             )}</Td>
           </tr>
         ))}

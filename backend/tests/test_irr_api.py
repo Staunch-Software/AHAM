@@ -52,7 +52,8 @@ async def test_dry_run_saves_nothing_then_upload_and_reupload_never_double_count
     mis = await as_(client, t, "mis")
     dry = await _upload(client, mis, dry=True)
     assert dry.status_code == 200, dry.text
-    assert dry.json()["summary"] == {"rows": 9, "new": 9, "replaced": 0, "excluded": 1, "exceptions": 1, "errors": 0}
+    assert dry.json()["summary"] == {"rows": 9, "new": 9, "replaced": 0, "excluded": 1, "exceptions": 1, "errors": 0,
+                                     "no_account": 0}
     assert dry.json()["columns"]["Disbursed amount"] == "Disbursed amount"
     assert (await client.get("/api/v1/irr/uploads", headers=mis)).json() == []
     rep = (await client.get(f"/api/v1/irr/report?as_of={DAY}&level=company", headers=mis)).json()
@@ -61,7 +62,8 @@ async def test_dry_run_saves_nothing_then_upload_and_reupload_never_double_count
     first = (await _upload(client, mis)).json()
     assert first["summary"]["new"] == 9 and first["batch_id"]
     again = (await _upload(client, mis)).json()
-    assert again["summary"] == {"rows": 9, "new": 0, "replaced": 9, "excluded": 1, "exceptions": 1, "errors": 0}
+    assert again["summary"] == {"rows": 9, "new": 0, "replaced": 9, "excluded": 1, "exceptions": 1, "errors": 0,
+                                "no_account": 0}
     hist = (await client.get("/api/v1/irr/uploads", headers=mis)).json()
     assert len(hist) == 2 and hist[0]["summary"]["replaced"] == 9
     rep = (await client.get(f"/api/v1/irr/report?as_of={DAY}&level=company", headers=mis)).json()
@@ -169,7 +171,8 @@ async def test_xlsx_upload_and_template(client):
     ws.parent.save(buf)
     r = await client.post("/api/v1/irr/disbursements", headers=mis, files={"file": ("reg.xlsx", buf.getvalue(), "application/octet-stream")})
     assert r.status_code == 200, r.text
-    assert r.json()["summary"] == {"rows": 2, "new": 2, "replaced": 0, "excluded": 0, "exceptions": 0, "errors": 0}
+    assert r.json()["summary"] == {"rows": 2, "new": 2, "replaced": 0, "excluded": 0, "exceptions": 0, "errors": 0,
+                                  "no_account": 0}
 
 
 async def test_scope_and_permissions(client, loaded):
@@ -253,8 +256,11 @@ async def test_settings_mapping_bands_and_reclassify(client, loaded):
     t = loaded
     admin = await as_(client, t, "admin")
     s = (await client.get("/api/v1/irr/settings", headers=admin)).json()
+    branch_aliases = s.pop("branch_aliases")
     assert s == {"product_map": {"Home Loan": "HL", "LAP": "NHL", "Loan Against Property": "NHL"}, "bands": {},
-                 "fy_start_month": 4, "decimals": 2}
+                 "fy_start_month": 4, "decimals": 2, "tenure_unit": "years"}
+    assert branch_aliases["Vizag"] == "Visakhapatnam"  # Aham's spellings, kept even though this company lacks those branches
+    s["branch_aliases"] = branch_aliases
     bad = {**s, "product_map": {"Home Loan": "HL", "home-loan": "NHL"}}
     assert (await client.put("/api/v1/irr/settings", headers=admin, json=bad)).status_code == 422
     assert (await client.put("/api/v1/irr/settings", headers=admin,
@@ -311,3 +317,69 @@ async def test_year_to_date_equals_the_sum_of_its_months(client, loaded):
     assert (year["average_tenure"], year["irr"]) == (165.0, 11.24)
     hl = (await client.get(f"/api/v1/irr/reconciliation?date_to={DAY}&product=NHL", headers=h)).json()
     assert [m["label"] for m in hl["months"]] == ["Nov 2026"] and all(c["ok"] for c in hl["checks"])
+
+
+# Aham's own register (16 Nov 2026): its headings, a HL/NHL column instead of the product, tenure in years, rates as
+# fractions (and some as text with a % sign), branch spellings of their own, and some rows without a loan account.
+AHAM_HEADER = ("UNIQUE ID,location,region,NAME,Date,Month OF DISB,DATE OF DISB,DISBURSED AMOUNT,HL/NHL,TENURE,"
+               "interest,PRODUCT WITH TENURE\n")
+AHAM_ROWS = (
+    "AP/X/0001,BR ONE TOWN,AP,Asha,05-11-2026,01-11-2026,2026-2027,3000000,HL,20,0.09,5400000\n"  # Aham's loan A
+    ",Branch One,AP,Bala,05-11-2026,01-11-2026,2026-2027,500000,hl,5,0.12,300000\n"  # loan B, no loan account
+    "AP/X/0003,Branch Three,AP,Chitra,03-11-2026,01-11-2026,,800000,nhl,7,12.50%,700000\n"  # NHL, rate as "12.50%"
+)
+
+
+async def test_aham_register_is_read_as_it_is(client):
+    t = await make_company()
+    mis = await as_(client, t, "mis")
+    # their spelling of the branch is not known yet
+    r = await _upload(client, mis, AHAM_HEADER + AHAM_ROWS, dry=True)
+    assert r.status_code == 200, r.text
+    assert [(e["row"], e["column"], e["value"]) for e in r.json()["errors"]] == [(2, "location", "BR ONE TOWN")]
+    s = (await client.get("/api/v1/irr/settings", headers=mis)).json()
+    bad = {**s, "branch_aliases": {**s["branch_aliases"], "BR ONE TOWN": "Nowhere"}}
+    assert "No branch has this name or code: 'BR ONE TOWN' → 'Nowhere'" in (
+        await client.put("/api/v1/irr/settings", headers=mis, json=bad)).json()["detail"]
+    r = await client.put("/api/v1/irr/settings", headers=mis,
+                         json={**s, "branch_aliases": {**s["branch_aliases"], "BR ONE TOWN": "Branch One"}})
+    assert r.status_code == 200, r.text
+
+    r = await _upload(client, mis, AHAM_HEADER + AHAM_ROWS)
+    body = r.json()
+    assert body["errors"] == []
+    assert body["summary"] == {"rows": 3, "new": 3, "replaced": 0, "excluded": 0, "exceptions": 0, "errors": 0,
+                               "no_account": 1}
+    assert body["columns"]["Loan account number"] == "UNIQUE ID" and body["columns"]["Branch"] == "location"
+    assert body["columns"]["Product"] == "HL/NHL" and body["columns"]["ROI %"] == "interest"
+    assert body["columns"]["Disbursement date"] == "Date"  # not "DATE OF DISB", which holds the financial year
+    assert len(body["notes"]) == 3 and "0.16 = 16%" in body["notes"][0] and "in years" in body["notes"][1]
+    assert "1 row has no loan account" in body["notes"][2]
+
+    # years and fractions give the same IRR as months and percentages: Aham's example, 13.03%
+    rep = (await client.get("/api/v1/irr/report?as_of=2026-11-05&level=company", headers=mis)).json()
+    assert rep["total"]["periods"]["TD"] == {"records": 2, "irr": 13.03, "amount": 3500000.0}
+    d = (await client.get("/api/v1/irr/detail?as_of=2026-11-05&period=TD", headers=mis)).json()
+    assert (d["totals"]["tenure"], d["totals"]["average_tenure"]) == (300.0, 150.0)  # kept in months
+    assert sorted((i["loan_account"], i["roi"]) for i in d["items"]) == [("", 12.0), ("AP/X/0001", 9.0)]
+    nhl = (await client.get("/api/v1/irr/report?as_of=2026-11-05&level=company&product=NHL", headers=mis)).json()
+    assert nhl["total"]["periods"]["MTD"]["irr"] == 12.5  # "12.50%" is 12.5%, not 1250%
+
+    # uploading it again replaces every row, the one without a loan account too
+    again = (await _upload(client, mis, AHAM_HEADER + AHAM_ROWS, dry=True)).json()["summary"]
+    assert (again["new"], again["replaced"]) == (0, 3)
+    # the same row twice without a loan account is a row error
+    twice = await _upload(client, mis, AHAM_HEADER + AHAM_ROWS.splitlines()[1] + "\n" + AHAM_ROWS.splitlines()[1] + "\n",
+                          dry=True)
+    assert twice.json()["errors"][0]["message"].startswith("Same branch, date, amount and customer as row 2")
+    # a file mixing 0.16 and 16 is not read as fractions: its 0.16 stays a row error
+    mixed = await _upload(client, mis, AHAM_HEADER + "M1,Branch One,AP,D,05-11-2026,,,100000,HL,10,0.16,1\n"
+                                                      "M2,Branch One,AP,E,05-11-2026,,,100000,HL,10,16,1\n", dry=True)
+    assert [(e["row"], e["column"]) for e in mixed.json()["errors"]] == [(2, "interest")]
+    # tenure in months when the setting says so, or when the heading says so
+    s = (await client.get("/api/v1/irr/settings", headers=mis)).json()
+    await client.put("/api/v1/irr/settings", headers=mis, json={**s, "tenure_unit": "months"})
+    months = (await _upload(client, mis, AHAM_HEADER + AHAM_ROWS, dry=True)).json()
+    assert not any("in years" in n for n in months["notes"])
+    yrs = (await _upload(client, mis, AHAM_HEADER.replace("TENURE", "Tenure in years") + AHAM_ROWS, dry=True)).json()
+    assert any("'Tenure in years' is read in years" in n for n in yrs["notes"])

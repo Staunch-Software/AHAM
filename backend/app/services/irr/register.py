@@ -17,20 +17,24 @@ from app.services.tabular import norm_header, parse_date, text
 # field -> accepted headings (normalised: lowercase, punctuation as spaces; "ROI %" -> "roi")
 COLUMNS: dict[str, list[str]] = {
     "loan_account": ["loan account number", "loan account no", "loan account", "loan acc no", "loan ac no", "lan",
-                     "lan no", "lan number", "loan no", "loan number", "account number", "account no"],
+                     "lan no", "lan number", "loan no", "loan number", "account number", "account no", "unique id"],
     "disbursement_ref": ["disbursement reference", "disbursement reference number", "disbursement ref",
                          "disbursement ref no", "disbursement no", "disbursement number", "disb ref", "disb ref no",
                          "disb no", "tranche number", "tranche no", "tranche"],
     "disbursement_date": ["disbursement date", "disbursal date", "date of disbursement", "disb date",
                           "disbursed on", "disbursed date", "date"],
-    "product": ["product", "product name", "product type", "loan product", "scheme"],
-    "branch": ["branch", "branch name", "branch code"],
+    # Aham's own register has a "HL/NHL" column instead of the product: its values are the class itself
+    "product": ["product", "product name", "product type", "loan product", "scheme", "hl nhl", "hl or nhl",
+                "product class"],
+    "branch": ["branch", "branch name", "branch code", "location"],
     "amount": ["disbursed amount", "disbursed amount rs", "disbursed amount inr", "disbursement amount",
                "disbursal amount", "amount disbursed", "disb amount", "disbursed amt", "amount"],
     "tenure": ["tenure in months", "tenure months", "tenure", "loan tenure", "loan tenure months",
-               "loan tenure in months", "tenor", "tenor months", "tenor in months", "tenure mths", "term months"],
+               "loan tenure in months", "tenor", "tenor months", "tenor in months", "tenure mths", "term months",
+               "tenure in years", "tenure years", "tenure yrs", "loan tenure in years", "loan tenure years",
+               "tenor in years", "tenor years", "term years"],
     # never "Transaction IRR" or "IRR": in Aham's process note that is amount x tenure x rate, not the rate
-    "roi": ["roi", "roi percent", "roi pct", "rate of interest", "interest rate", "rate"],
+    "roi": ["roi", "roi percent", "roi pct", "rate of interest", "interest rate", "rate", "interest"],
     "status": ["status", "disbursement status", "loan status"],
     "customer_name": ["customer name", "customer", "borrower name", "applicant name", "name"],
 }
@@ -160,24 +164,75 @@ def roi_problem(roi: Decimal) -> str | None:
     return None
 
 
-def dedup_key(account: str, ref: str | None, day: date, amount: Decimal) -> str:
-    """Loan account + disbursement reference; without a reference, loan account + date + amount."""
+def dedup_key(account: str, ref: str | None, day: date, amount: Decimal, *, branch_id: Any = None,
+              customer: str | None = None) -> str:
+    """Loan account + disbursement reference; without a reference, loan account + date + amount. A row with no loan
+    account (Aham's register has some) is known by branch, date, amount and customer name; not by tenure or ROI, so a
+    later upload that fills in a missing tenure replaces the row instead of adding it again."""
+    if not account:
+        parts = [str(branch_id), day.isoformat(), f"{amount.quantize(Decimal('0.01'))}",
+                 " ".join((customer or "").upper().split())]
+        return ("N|" + "|".join(parts))[:200]
     if ref:
         return f"R|{account}|{ref.upper()}"[:200]
     return f"D|{account}|{day.isoformat()}|{amount.quantize(Decimal('0.01'))}"[:200]
 
 
+# Tenure headings that say their unit; any other tenure heading ("Tenure", "TENURE", "Tenor") follows the setting
+TENURE_IN_YEARS = {"tenure in years", "tenure years", "tenure yrs", "loan tenure in years", "loan tenure years",
+                   "tenor in years", "tenor years", "term years"}
+TENURE_IN_MONTHS = {"tenure in months", "tenure months", "loan tenure months", "loan tenure in months",
+                    "tenor months", "tenor in months", "tenure mths", "term months"}
+CLASS_NAMES = {"hl": "HL", "nhl": "NHL"}  # a product cell that is the class itself (Aham's "HL/NHL" column)
+
+
+def tenure_in_years(heading: str, default_unit: str) -> bool:
+    h = norm_header(heading)
+    if h in TENURE_IN_YEARS:
+        return True
+    if h in TENURE_IN_MONTHS:
+        return False
+    return default_unit == "years"
+
+
+def rates_are_fractions(rows: list[dict[str, Any]], cols: dict[str, list[str]]) -> bool:
+    """True when every rate in the file written as a plain number is below 1 (0.16 for 16%, or an Excel cell formatted
+    as a percentage): the file gives rates as fractions. A text with a % sign ("17.50%") is a percentage as written and
+    does not count either way. A file mixing 0.16 and 16 is not read as fractions; its rates below 1 stay row errors."""
+    names = [norm_header(n) for n in cols.get("roi") or []]
+    seen = False
+    for row in rows:
+        for name in names:
+            v = row.get(name)
+            if v in (None, ""):
+                continue
+            if isinstance(v, str) and "%" in v:
+                break
+            try:
+                n = number(v)
+            except ValueError:
+                break
+            if n is not None and n > 0:
+                if n >= 1:
+                    return False
+                seen = True
+            break
+    return seen
+
+
 @dataclass
 class Lookups:
-    branches: dict[str, tuple[Any, Any]]  # normalised branch name or code -> (branch id, region id)
+    branches: dict[str, tuple[Any, Any]]  # normalised branch name, code or register alias -> (branch id, region id)
     products: dict[str, str]  # product key -> HL | NHL
     today: date
+    tenure_unit: str = "months"  # for a tenure heading that does not say its unit
 
 
 @dataclass
 class Parsed:
     records: list[dict] = field(default_factory=list)  # column values of the Disbursement table
     errors: list[dict] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)  # how the file was read, when it is not the obvious way
 
 
 def parse_register(rows: list[dict[str, Any]], cols: dict[str, list[str]], look: Lookups) -> Parsed:
@@ -185,6 +240,16 @@ def parse_register(rows: list[dict[str, Any]], cols: dict[str, list[str]], look:
     all its problems are reported at once."""
     out = Parsed()
     first_row_of: dict[str, int] = {}
+    fractions = rates_are_fractions(rows, cols)
+    tenure_heading = (cols.get("tenure") or [LABELS["tenure"]])[0]
+    years = tenure_in_years(tenure_heading, look.tenure_unit)
+    if fractions:
+        out.notes.append(f"Every rate in '{(cols.get('roi') or [LABELS['roi']])[0]}' is below 1, so the rates are read "
+                         "as fractions: 0.16 = 16%.")
+    if years:
+        out.notes.append(f"'{tenure_heading}' is read in years and kept in months (10 years = 120 months). Change this "
+                         "under IRR settings if the register gives months.")
+    no_account = 0
     for row in rows:
         n = row["_row"]
         errs: list[dict] = []
@@ -203,9 +268,7 @@ def parse_register(rows: list[dict[str, Any]], cols: dict[str, list[str]], look:
 
         v, col = cell("loan_account")
         account = (text(v, 200) or "").upper()
-        if not account:
-            err(col, v, "Empty. Every row needs the loan account number")
-        elif len(account) > 50:
+        if len(account) > 50:
             err(col, v, "Longer than 50 characters. Check that this is the loan account number")
 
         v, col = cell("disbursement_ref")
@@ -232,7 +295,7 @@ def parse_register(rows: list[dict[str, Any]], cols: dict[str, list[str]], look:
         if not product:
             err(col, v, "Empty. Enter the product, for example Home Loan or LAP")
         else:
-            product_class = look.products.get(product_key(product))
+            product_class = look.products.get(product_key(product)) or CLASS_NAMES.get(product_key(product))
             if not product_class:
                 err(col, v, "This product is not in the product mapping. Add it as HL or NHL under IRR settings "
                             "(HR & Admin > IRR settings), then upload again")
@@ -267,15 +330,19 @@ def parse_register(rows: list[dict[str, Any]], cols: dict[str, list[str]], look:
         tenure = None
         try:
             tenure = number(v)
+            if tenure is not None and years:
+                tenure *= 12
             if tenure is not None and abs(tenure) >= 1_000_000:
-                err(col, v, "Too large for a tenure in months. Enter the tenure in months, for example 240")
+                err(col, v, "Too large for a tenure. Enter the tenure as a number, for example 240 months")
         except ValueError:
-            err(col, v, "Not a number. Enter the tenure in months using digits only, for example 240")
+            err(col, v, "Not a number. Enter the tenure using digits only, for example 240 months or 20 years")
 
         v, col = cell("roi")
         roi = None
         try:
             roi = number(v)
+            if roi is not None and fractions and not (isinstance(v, str) and "%" in v):
+                roi *= 100
             problem = roi_problem(roi) if roi is not None and roi > 0 else None
             if problem:
                 err(col, v, problem)
@@ -285,11 +352,15 @@ def parse_register(rows: list[dict[str, Any]], cols: dict[str, list[str]], look:
             err(col, v, "Not a number. Enter the rate as a percentage, for example 9.25")
 
         status = text(cell("status")[0], 50)
+        customer = text(cell("customer_name")[0], 200)
         if not errs:
-            key = dedup_key(account, ref, day, amount)
+            key = dedup_key(account, ref, day, amount, branch_id=place[0], customer=customer)
             if key in first_row_of:
                 v, col = cell("loan_account")
-                if ref:
+                if not account:
+                    err(col, v, f"Same branch, date, amount and customer as row {first_row_of[key]}, and no loan "
+                                "account. Keep one row, or add the loan account numbers")
+                elif ref:
                     err(col, v, f"Same loan account and disbursement reference as row {first_row_of[key]}. "
                                 "Keep one of the two rows")
                 else:
@@ -301,12 +372,17 @@ def parse_register(rows: list[dict[str, Any]], cols: dict[str, list[str]], look:
             out.errors.extend(errs)
             continue
         excluded = bool(status) and status.lower().startswith(EXCLUDED_STATUS)
+        no_account += not account
         out.records.append({
             "dedup_key": key, "loan_account": account, "disbursement_ref": ref, "disbursement_date": day,
             "product": product, "product_key": product_key(product), "product_class": product_class,
             "branch_id": place[0], "region_id": place[1], "amount": amount.quantize(Decimal("0.01")),
             "tenure_months": tenure, "roi": roi, "status": status, "excluded": excluded,
             "exception": None if excluded else exception_reason(tenure, roi),
-            "customer_name": text(cell("customer_name")[0], 200), "source_row": n,
+            "customer_name": customer, "source_row": n,
         })
+    if no_account:
+        out.notes.append(f"{no_account} row{'s have' if no_account > 1 else ' has'} no loan account. They are kept and "
+                         "known by branch, date, amount and customer, so uploading them again replaces them; "
+                         "but if the loan account is added later, they would count twice.")
     return out

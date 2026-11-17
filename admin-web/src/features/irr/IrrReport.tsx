@@ -86,7 +86,7 @@ function DetailDialog({ target, asOf, onClose }: { target: DetailTarget; asOf: s
               <Table head={['Loan account', 'Date', 'Branch', 'Product', 'Amount (₹)', 'Tenure (months)', 'ROI (%)', 'Transaction IRR (amount × tenure × ROI)']}>
                 {data.items.map((i) => (
                   <tr key={i.id}>
-                    <Td className="whitespace-nowrap font-medium text-slate-900">{i.loan_account}{i.disbursement_ref && <span className="ml-1 text-xs text-slate-500">#{i.disbursement_ref}</span>}</Td>
+                    <Td className="whitespace-nowrap font-medium text-slate-900">{i.loan_account || <span className="font-normal text-slate-400">no loan account</span>}{i.disbursement_ref && <span className="ml-1 text-xs text-slate-500">#{i.disbursement_ref}</span>}</Td>
                     <Td className="tabular whitespace-nowrap">{fmtDay(i.disbursement_date)}</Td>
                     <Td className="whitespace-nowrap">{i.branch}<div className="text-xs text-slate-500">{i.region}</div></Td>
                     <Td className="whitespace-nowrap">{i.product} <span className="text-xs text-slate-500">({i.product_class})</span></Td>

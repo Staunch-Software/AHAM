@@ -140,7 +140,7 @@ def test_register_reads_synonyms_and_exact_row_errors():
     assert errs[(7, "Date of Disbursement")] == {
         "row": 7, "column": "Date of Disbursement", "value": "31/02/2026",
         "message": "Not a real date. Use DD-MM-YYYY, for example 05-11-2026"}
-    assert errs[(8, "LAN")]["message"] == "Empty. Every row needs the loan account number"
+    assert (8, "LAN") not in errs  # an empty loan account is allowed (Aham's register has such rows)
     assert errs[(8, "Product")]["value"] == "Personal Loan"
     assert "not in the product mapping" in errs[(8, "Product")]["message"]
     assert errs[(8, "Branch Code")]["value"] == "Nowhere"
