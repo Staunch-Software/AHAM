@@ -15,11 +15,13 @@ export const LEVELS: { value: Level; label: string }[] = [{ value: 'branch', lab
 /** records = "No.": disbursement rows, so a loan paid in two tranches counts twice. */
 export interface Cell { records: number; irr: number | null; amount: number }
 interface RowBase { label: string; code?: string; region?: string; branch_id?: string; region_id?: string | null; flags: string[] }
-export interface PeriodRow extends RowBase { periods: Record<Period, Cell> }
+/** A column of the TD / MTD / YTD report: one of the three periods, or a chosen date range (BRD 3.1). */
+export type ReportPeriod = Period | 'RANGE'
+export interface PeriodRow extends RowBase { periods: Partial<Record<ReportPeriod, Cell>> }
 export interface ClassRow extends RowBase { classes: Record<ProductClass, Cell> }
 export interface PeriodReport {
-  as_of: string; product: ProductClass; level: Level; decimals: number; periods: Record<Period, { from: string; to: string }>
-  rows: PeriodRow[]; total: PeriodRow; warnings: string[]; band: { min: number; max: number } | null; open_exceptions: Record<Period, number>
+  as_of: string; product: ProductClass; level: Level; decimals: number; periods: Partial<Record<ReportPeriod, { from: string; to: string; label: string }>>
+  rows: PeriodRow[]; total: PeriodRow; warnings: string[]; band: { min: number; max: number } | null; open_exceptions: Partial<Record<ReportPeriod, number>>
 }
 export interface MonthReport { as_of: string; level: Level; decimals: number; period: { from: string; to: string }; rows: ClassRow[]; total: ClassRow; warnings: string[]; open_exceptions: number }
 export interface RowError { row: number; column: string; value: string; message: string }

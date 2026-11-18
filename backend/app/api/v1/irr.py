@@ -111,11 +111,32 @@ async def _open_exceptions(s: AsyncSession, scope: Scope, bounds: dict[str, tupl
                            product: str | None = None) -> dict[str, int]:
     """How many disbursements of each period are left out until their tenure or ROI is corrected."""
     d = Disbursement.disbursement_date
-    q = select(*[func.count().filter(d >= bounds[p][0], d <= bounds[p][1]) for p in calc.PERIODS]).where(
-        *scope.conds, *OPEN_EXCEPTION, d >= bounds["YTD"][0], d <= bounds["YTD"][1])
+    names = list(bounds)
+    q = select(*[func.count().filter(d >= bounds[p][0], d <= bounds[p][1]) for p in names]).where(
+        *scope.conds, *OPEN_EXCEPTION, d >= min(b[0] for b in bounds.values()), d <= max(b[1] for b in bounds.values()))
     if product:
         q = q.where(Disbursement.product_class == product)
-    return dict(zip(calc.PERIODS, (await s.execute(q)).one()))
+    return dict(zip(names, (await s.execute(q)).one()))
+
+
+def _range_label(first: date, last: date) -> str:
+    return f"{first:%d-%m-%Y} to {last:%d-%m-%Y}"
+
+
+def _report_periods(periods: str | None, date_from: date | None, date_to: date | None) -> tuple[str, ...] | None:
+    """The periods asked for (BRD 3.1, "Reporting period"): any of TD, MTD and YTD, or None for a date range."""
+    if date_from or date_to:
+        if not (date_from and date_to):
+            raise HTTPException(422, "Give both dates of the range: date_from and date_to")
+        if date_from > date_to:
+            raise HTTPException(422, "The start date is after the end date")
+        return None
+    if not periods:
+        return calc.PERIODS
+    wanted = {p.strip().upper() for p in periods.split(",") if p.strip()}
+    if not wanted or wanted - set(calc.PERIODS):
+        raise HTTPException(422, "periods takes TD, MTD and / or YTD, for example periods=MTD or periods=TD,YTD")
+    return tuple(p for p in calc.PERIODS if p in wanted)
 
 
 def _rows_for(level: str, scope: Scope, region_id: uuid.UUID | None, branch_id: uuid.UUID | None,
@@ -164,40 +185,53 @@ def _key_fn(level: str):
 # ---------------------------------------------------------------- report 1: TD / MTD / YTD (for the day, month, year to date)
 @router.get("/report")
 async def report(as_of: date | None = None, product: Product = "HL", level: Level = "branch",
-                 region_id: uuid.UUID | None = None, branch_id: uuid.UUID | None = None, format: Fmt | None = None,
+                 region_id: uuid.UUID | None = None, branch_id: uuid.UUID | None = None,
+                 periods: str | None = None, date_from: date | None = None, date_to: date | None = None,
+                 format: Fmt | None = None,
                  user: User = Depends(require_perm("irr.view")), s: AsyncSession = Depends(get_session)):
     """Number of disbursements and weighted average IRR for TD, MTD and YTD of one product class, per branch, region
-    or for the company. The total row is worked out from the disbursements themselves, never from the rows above it."""
+    or for the company. The total row is worked out from the disbursements themselves, never from the rows above it.
+    BRD 3.1: `periods` shows only some of TD, MTD and YTD (periods=MTD); `date_from` + `date_to` give one column for
+    that date range instead ("RANGE"), worked out the same way from its disbursements."""
     cfg = await load_config(s, user.company_id)
     scope = await _scope(s, user, region_id, branch_id)
-    day = await _as_of(s, user, scope, as_of)
-    bounds = calc.period_bounds(day, cfg.fy_start_month)
-    loans = await _loans(s, scope, bounds["YTD"][0], day, product)
-    groups = calc.summarise(loans, day, cfg.fy_start_month, _key_fn(level))
-    total = calc.summarise(loans, day, cfg.fy_start_month).get(None, {})
+    shown = _report_periods(periods, date_from, date_to)
+    if shown is None:
+        day = date_to
+        bounds = {"RANGE": (date_from, date_to)}
+        labels_of = {"RANGE": _range_label(date_from, date_to)}
+    else:
+        day = await _as_of(s, user, scope, as_of)
+        full = calc.period_bounds(day, cfg.fy_start_month)
+        bounds = {p: full[p] for p in shown}
+        labels_of = calc.PERIOD_LABELS
+    names = list(bounds)
+    loans = await _loans(s, scope, min(b[0] for b in bounds.values()), day, product)
+    groups = calc.summarise_bounds(loans, bounds, _key_fn(level))
+    total = calc.summarise_bounds(loans, bounds).get(None, {})
     total_label = "Company total" if scope.company_wide else "Total"
     rows, warnings = [], []
     for key, labels in _rows_for(level, scope, region_id, branch_id, set(groups) if level != "company" else set()):
         g = total if level == "company" else groups.get(key, {})
         flags = []
-        for p in calc.PERIODS:
-            w = _warn(labels["label"], calc.PERIOD_LABELS[p], product, g.get(p), cfg)
+        for p in names:
+            w = _warn(labels["label"], labels_of[p], product, g.get(p), cfg)
             if w:
                 warnings.append(w)
                 flags.append(p)
-        rows.append({**labels, "periods": {p: _cell(g.get(p), cfg.decimals) for p in calc.PERIODS}, "flags": flags})
+        rows.append({**labels, "periods": {p: _cell(g.get(p), cfg.decimals) for p in names}, "flags": flags})
     total_flags = []
     if level != "company":
-        for p in calc.PERIODS:
-            w = _warn(total_label, calc.PERIOD_LABELS[p], product, total.get(p), cfg)
+        for p in names:
+            w = _warn(total_label, labels_of[p], product, total.get(p), cfg)
             if w:
                 warnings.append(w)
                 total_flags.append(p)
-    tot = {"label": total_label, "periods": {p: _cell(total.get(p), cfg.decimals) for p in calc.PERIODS},
+    tot = {"label": total_label, "periods": {p: _cell(total.get(p), cfg.decimals) for p in names},
            "flags": total_flags}
     if format:
         first = {"branch": ["Branch code", "Branch", "Region"], "region": ["Region"], "company": ["Scope"]}[level]
-        header = first + [f"{calc.PERIOD_LABELS[p]}: {h}" for p in calc.PERIODS
+        header = first + [f"{labels_of[p]}: {h}" for p in names
                           for h in ("Number of disbursements", "Weighted average IRR (%)")]
 
         def line(r: dict, total_row: bool = False) -> list:
@@ -205,13 +239,14 @@ async def report(as_of: date | None = None, product: Product = "HL", level: Leve
                     "company": [r["label"]]}[level]
             if total_row and level == "branch":
                 lead = ["", r["label"], ""]
-            return lead + [x for p in calc.PERIODS for x in (r["periods"][p]["records"], r["periods"][p]["irr"])]
+            return lead + [x for p in names for x in (r["periods"][p]["records"], r["periods"][p]["irr"])]
 
         body = [line(r) for r in rows] + ([line(tot, True)] if level != "company" else [])
-        return _file(format, f"irr_{product}_{level}_{day}", header, body, f"{product} IRR {day}")
+        stem = f"{date_from}_to_{date_to}" if shown is None else str(day)
+        return _file(format, f"irr_{product}_{level}_{stem}", header, body, f"{product} IRR {stem}"[:31])
     return {
         "as_of": day, "product": product, "level": level, "decimals": cfg.decimals,
-        "periods": {p: {"from": a, "to": b} for p, (a, b) in bounds.items()},
+        "periods": {p: {"from": a, "to": b, "label": labels_of[p]} for p, (a, b) in bounds.items()},
         "rows": rows, "total": tot, "warnings": warnings,
         "band": cfg.bands.get(product).model_dump() if cfg.bands.get(product) else None,
         "open_exceptions": await _open_exceptions(s, scope, bounds, product),
@@ -273,21 +308,26 @@ async def month_by_product(as_of: date | None = None, level: Level = "branch", r
 # ---------------------------------------------------------------- loan-level detail (audit)
 DETAIL_HEADER = ["Loan account number", "Disbursement reference", "Disbursement date", "Branch code", "Branch",
                  "Region", "Product", "Product class", "Disbursed amount (₹)", "Tenure (months)", "ROI (%)",
-                 "Transaction IRR (amount × tenure × ROI)"]
+                 "Weight (amount × tenure)", "Transaction IRR (amount × tenure × ROI)"]
 
 
 @router.get("/detail")
 async def detail(as_of: date | None = None, period: Period = "MTD", product: Product = "HL",
                  region_id: uuid.UUID | None = None, branch_id: uuid.UUID | None = None,
+                 date_from: date | None = None, date_to: date | None = None,
                  page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=500), format: Fmt | None = None,
                  user: User = Depends(require_perm("irr.view")), s: AsyncSession = Depends(get_session)):
-    """The disbursements behind a report figure, each with its Transaction IRR, and the sums that give the IRR, so it
-    can be checked by hand: sum of "Transaction IRR" ÷ (sum of amount × average tenure). One product class at a time,
-    since HL and NHL are never added together."""
+    """The disbursements behind a report figure, each with its weight (amount × tenure, BRD section 9) and its
+    Transaction IRR, and the sums that give the IRR, so it can be checked by hand: sum of "Transaction IRR" ÷ (sum of
+    amount × average tenure). One product class at a time, since HL and NHL are never added together. `date_from` +
+    `date_to` give the loans of a date range instead of a period (period "RANGE")."""
     cfg = await load_config(s, user.company_id)
     scope = await _scope(s, user, region_id, branch_id)
-    day = await _as_of(s, user, scope, as_of)
-    first, last = calc.period_bounds(day, cfg.fy_start_month)[period]
+    if _report_periods(None, date_from, date_to) is None:
+        day, first, last, period = date_to, date_from, date_to, "RANGE"
+    else:
+        day = await _as_of(s, user, scope, as_of)
+        first, last = calc.period_bounds(day, cfg.fy_start_month)[period]
     where = [*scope.conds, *ELIGIBLE, Disbursement.disbursement_date >= first, Disbursement.disbursement_date <= last,
              Disbursement.product_class == product]
     sums = (await s.execute(select(
@@ -305,17 +345,18 @@ async def detail(as_of: date | None = None, period: Period = "MTD", product: Pro
                       "disbursement_date": d.disbursement_date, "branch_code": code, "branch": name,
                       "region": scope.region_label(d.region_id), "product": d.product,
                       "product_class": d.product_class, "amount": d.amount, "tenure_months": d.tenure_months,
-                      "roi": d.roi, "weighted_roi": loan.product})
+                      "roi": d.roi, "weight": loan.weight, "weighted_roi": loan.product})
     if format:
         body = [[i["loan_account"], i["disbursement_ref"], i["disbursement_date"].strftime("%d-%m-%Y"),
                  i["branch_code"], i["branch"], i["region"], i["product"], i["product_class"], i["amount"],
-                 i["tenure_months"], i["roi"], i["weighted_roi"]] for i in items]
-        return _file(format, f"irr_loans_{period}_{product}_{day}", DETAIL_HEADER, body, f"Loans {period}")
+                 i["tenure_months"], i["roi"], i["weight"], i["weighted_roi"]] for i in items]
+        name = f"irr_loans_{product}_{first}_to_{last}" if period == "RANGE" else f"irr_loans_{period}_{product}_{day}"
+        return _file(format, name, DETAIL_HEADER, body, f"Loans {period}")
     records, amount, tenure, p_sum = sums
     return {
         "as_of": day, "period": period, "from": first, "to": last, "product": product, "decimals": cfg.decimals,
         "total": records, "page": page, "page_size": page_size,
-        "items": [{**i, **{k: _num(i[k]) for k in ("amount", "tenure_months", "roi", "weighted_roi")}} for i in items],
+        "items": [{**i, **{k: _num(i[k]) for k in ("amount", "tenure_months", "roi", "weight", "weighted_roi")}} for i in items],
         "totals": {"records": records, "amount": _num(Decimal(amount)), "tenure": _num(Decimal(tenure)),
                    "average_tenure": _num(calc.average_tenure(tenure, records)),
                    "denominator": _num(calc.denominator(amount, tenure, records)), "weighted_roi": _num(Decimal(p_sum)),

@@ -90,7 +90,7 @@ async def test_report_today_month_year_by_branch(client, loaded):
     assert [(total["periods"][p]["records"], total["periods"][p]["irr"]) for p in ("TD", "MTD", "YTD")] == [
         (2, 13.03), (3, 12.76), (4, 11.24)]  # from the rows (MTD: 8,040 lakh-months / (45 lakh x 140)), not the rows above
     assert body["open_exceptions"] == {"TD": 1, "MTD": 1, "YTD": 1}
-    assert body["periods"]["YTD"] == {"from": "2026-04-01", "to": DAY}
+    assert body["periods"]["YTD"] == {"from": "2026-04-01", "to": DAY, "label": "Year to date (YTD)"}
     # region level and the default day (the latest disbursement)
     reg = (await client.get("/api/v1/irr/report?product=NHL&level=region", headers=h)).json()
     assert reg["as_of"] == DAY
@@ -203,7 +203,8 @@ async def test_detail_and_exports(client, loaded):
     assert d["totals"] == {"records": 3, "amount": 4500000.0, "tenure": 540.0, "average_tenure": 180.0,
                            "denominator": 810000000.0, "weighted_roi": 9000000000.0, "irr": 11.11}
     first = d["items"][0]
-    assert first["loan_account"] == "HLA" and first["weighted_roi"] == 2160000000.0 and "weight" not in first
+    # BRD section 9: each row also shows its weight, amount x its own tenure (for audit; not the IRR's denominator)
+    assert first["loan_account"] == "HLA" and first["weighted_roi"] == 2160000000.0 and first["weight"] == 240000000.0
     nhl = (await client.get(f"/api/v1/irr/detail?as_of={DAY}&period=YTD&product=NHL&branch_id={loaded['b1']}",
                             headers=h)).json()
     assert [i["loan_account"] for i in nhl["items"]] == ["LAP1"]  # one product at a time, never HL and NHL together
@@ -383,3 +384,35 @@ async def test_aham_register_is_read_as_it_is(client):
     assert not any("in years" in n for n in months["notes"])
     yrs = (await _upload(client, mis, AHAM_HEADER.replace("TENURE", "Tenure in years") + AHAM_ROWS, dry=True)).json()
     assert any("'Tenure in years' is read in years" in n for n in yrs["notes"])
+
+
+async def test_report_one_period_or_a_date_range(client, loaded):
+    """BRD 3.1, the selection screen: the reporting period can be one of TD, MTD and YTD, or a date range."""
+    t = loaded
+    h = await as_(client, t, "mis")
+    full = (await client.get(f"/api/v1/irr/report?as_of={DAY}&level=company", headers=h)).json()
+    mtd = (await client.get(f"/api/v1/irr/report?as_of={DAY}&level=company&periods=MTD", headers=h)).json()
+    assert list(mtd["periods"]) == ["MTD"] and list(mtd["total"]["periods"]) == ["MTD"]
+    assert mtd["total"]["periods"]["MTD"] == full["total"]["periods"]["MTD"]
+    two = (await client.get(f"/api/v1/irr/report?as_of={DAY}&level=company&periods=ytd,TD", headers=h)).json()
+    assert list(two["periods"]) == ["TD", "YTD"]  # always in TD, MTD, YTD order
+    assert (await client.get(f"/api/v1/irr/report?periods=QTD", headers=h)).status_code == 422
+
+    # a date range: HLA's second tranche (15 Oct, 10 lakh, 240 months, 9%) and HLC (2 Nov, 10 lakh, 120 months, 10%)
+    q = "date_from=2026-10-15&date_to=2026-11-02"
+    rng = (await client.get(f"/api/v1/irr/report?{q}&level=company", headers=h)).json()
+    assert list(rng["periods"]) == ["RANGE"] and rng["periods"]["RANGE"]["label"] == "15-10-2026 to 02-11-2026"
+    # (21,600 + 12,000 lakh-months) / (20 lakh x 180 months) = 9.33%
+    assert rng["total"]["periods"]["RANGE"] == {"records": 2, "irr": 9.33, "amount": 2000000.0}
+    by_branch = {r["label"]: r["periods"]["RANGE"]["records"] for r in
+                 (await client.get(f"/api/v1/irr/report?{q}&level=branch", headers=h)).json()["rows"]}
+    assert by_branch == {"Branch One": 1, "Branch Two": 0, "Branch Three": 1}
+    # a range may cross financial years: HLD of 31 Mar 2026 is in March's range
+    march = (await client.get("/api/v1/irr/report?date_from=2026-03-01&date_to=2026-03-31&level=company", headers=h)).json()
+    assert march["total"]["periods"]["RANGE"]["irr"] == 8.5
+    d = (await client.get(f"/api/v1/irr/detail?{q}&product=HL", headers=h)).json()
+    assert d["period"] == "RANGE" and d["totals"]["records"] == 2 and d["totals"]["irr"] == 9.33
+    x = await client.get(f"/api/v1/irr/report?{q}&level=company&format=csv", headers=h)
+    assert "15-10-2026 to 02-11-2026: Weighted average IRR (%)" in x.content.decode("utf-8-sig").splitlines()[0]
+    assert (await client.get("/api/v1/irr/report?date_from=2026-11-02", headers=h)).status_code == 422
+    assert (await client.get("/api/v1/irr/report?date_from=2026-11-02&date_to=2026-11-01", headers=h)).status_code == 422

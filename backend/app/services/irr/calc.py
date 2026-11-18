@@ -40,6 +40,12 @@ class Loan:
     region_id: Hashable = None
 
     @property
+    def weight(self) -> Decimal:
+        """Amount x the row's own tenure: the BRD's "weight", shown for audit. The IRR's denominator is the group's
+        amount x its plain average tenure (Aham's process note), not the sum of these."""
+        return self.amount * self.tenure
+
+    @property
     def product(self) -> Decimal:
         """The row's Transaction IRR: amount x its own tenure x ROI."""
         return self.amount * self.tenure * self.roi
@@ -111,15 +117,20 @@ def summarise(loans: Iterable[Loan], as_of: date, fy_start_month: int = 4,
               key: Callable[[Loan], Hashable] | None = None) -> dict[Hashable, dict[str, Group]]:
     """{group key: {"TD": Group, "MTD": Group, "YTD": Group}}. Without `key` everything is one group (key None).
     Loans outside the year to date are ignored; a group appears once it has a loan in the year to date."""
-    bounds = period_bounds(as_of, fy_start_month)
+    return summarise_bounds(loans, period_bounds(as_of, fy_start_month), key)
+
+
+def summarise_bounds(loans: Iterable[Loan], bounds: dict[str, tuple[date, date]],
+                     key: Callable[[Loan], Hashable] | None = None) -> dict[Hashable, dict[str, Group]]:
+    """Like `summarise`, for any named inclusive date ranges ({"MTD": (first, last)}, or a chosen date range): each
+    group's own sums per range, every range worked out from the loans themselves."""
     out: dict[Hashable, dict[str, Group]] = {}
     for loan in loans:
         groups = None
-        for p in PERIODS:
-            first, last = bounds[p]
+        for p, (first, last) in bounds.items():
             if first <= loan.day <= last:
                 if groups is None:
-                    groups = out.setdefault(key(loan) if key else None, {q: Group() for q in PERIODS})
+                    groups = out.setdefault(key(loan) if key else None, {q: Group() for q in bounds})
                 groups[p].add(loan)
     return out
 

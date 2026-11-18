@@ -30,7 +30,7 @@ const REPORT = {
 }
 const DETAIL = {
   as_of: '2026-11-05', period: 'MTD', from: '2026-11-01', to: '2026-11-05', decimals: 2, total: 2, page: 1, page_size: 25,
-  items: [{ id: 'd1', loan_account: 'HLA', disbursement_ref: '1', disbursement_date: '2026-11-05', branch: 'Vijayawada', branch_code: 'B1', region: 'AP & TG', product: 'Home Loan', product_class: 'HL', amount: 3000000, tenure_months: 240, roi: 9, weighted_roi: 6480000000 }],
+  items: [{ id: 'd1', loan_account: 'HLA', disbursement_ref: '1', disbursement_date: '2026-11-05', branch: 'Vijayawada', branch_code: 'B1', region: 'AP & TG', product: 'Home Loan', product_class: 'HL', amount: 3000000, tenure_months: 240, roi: 9, weight: 720000000, weighted_roi: 6480000000 }],
   totals: { records: 2, amount: 3500000, tenure: 300, average_tenure: 150, denominator: 525000000, weighted_roi: 6840000000, irr: 13.03 },
 }
 
@@ -48,7 +48,10 @@ test('the IRR report shows No. and IRR per period, a dash when there is nothing,
   expect(screen.getAllByText('Number of disbursements')).toHaveLength(3)
   for (const h of ['For the day (TD)', 'Month to date (MTD)', 'Year to date (YTD)']) expect(screen.getByText(h)).toBeInTheDocument()
   expect(screen.getAllByText('Weighted average IRR (%)')).toHaveLength(3)
-  expect(screen.getByText(/sum of Transaction IRR \(disbursed amount × that loan's tenure in months × ROI\) ÷ \(sum of disbursed amount × average tenure\)/)).toBeInTheDocument()
+  const how = screen.getByRole('region', { name: 'How the IRR is worked out' })
+  expect(how).toHaveTextContent('Weighted average IRR = Σ Transaction IRR ÷ (Σ disbursed amount × average tenure)')
+  expect(how).toHaveTextContent("Transaction IRR = disbursed amount × that loan's tenure (months) × ROI")
+  expect(how).toHaveTextContent('Average tenure = plain average of the tenures in the period')
   expect(screen.getByText(/1 disbursement of this year to date is left out/)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Export as Excel' })).toBeInTheDocument()
 
@@ -63,6 +66,49 @@ test('the IRR report shows No. and IRR per period, a dash when there is nothing,
   // HL and NHL are never added together: the dialog switches product, it has no "both"
   await userEvent.click(within(dialog).getByRole('button', { name: 'NHL' }))
   await waitFor(() => expect(calls.filter((c) => c.url === '/irr/detail').at(-1)!.cfg.params).toMatchObject({ product: 'NHL' }))
+})
+
+test('the report shows one period, or a date range, and the loans of the range with their weight (BRD 3.1, 9)', async () => {
+  signIn('mis', ['irr.view', 'irr.manage'], { '/irr/report': REPORT, '/irr/detail': DETAIL, '/irr/uploads': [] })
+  const RANGE = {
+    ...REPORT, as_of: '2026-11-05', periods: { RANGE: { from: '2026-11-01', to: '2026-11-05', label: '01-11-2026 to 05-11-2026' } },
+    rows: REPORT.rows.map((r) => ({ ...r, periods: { RANGE: r.periods.MTD } })), total: { ...REPORT.total, periods: { RANGE: cell(3, 12.76) } },
+    open_exceptions: { RANGE: 1 },
+  }
+  const MTD = { ...REPORT, periods: { MTD: REPORT.periods.MTD }, rows: REPORT.rows.map((r) => ({ ...r, periods: { MTD: r.periods.MTD } })),
+    total: { ...REPORT.total, periods: { MTD: REPORT.total.periods.MTD } }, open_exceptions: { MTD: 1 } }
+  const base = handlers.get
+  handlers.get = (url, cfg) => {
+    const p = (cfg?.params ?? {}) as Record<string, unknown>
+    if (url === '/irr/report' && p.date_from) return { data: RANGE }
+    if (url === '/irr/report' && p.periods === 'MTD') return { data: MTD }
+    return base(url, cfg)
+  }
+  renderApp('/admin/irr')
+  const show = await screen.findByRole('group', { name: 'Show' })
+  await userEvent.click(within(show).getByRole('button', { name: 'MTD' }))
+  await waitFor(() => expect(calls.filter((c) => c.url === '/irr/report').at(-1)!.cfg.params).toMatchObject({ periods: 'MTD' }))
+  expect(await screen.findByText('Home Loan (HL): Month to date (MTD)')).toBeInTheDocument()
+  expect(screen.queryByText('For the day (TD)')).toBeNull()
+  expect(screen.getByText(/1 disbursement of this month to date is left out/)).toBeInTheDocument()
+
+  await userEvent.click(within(show).getByRole('button', { name: 'Date range' }))
+  // the range starts on the 1st of the as-of month and ends on the as-of date; the as-of date is not used
+  await waitFor(() => expect(calls.filter((c) => c.url === '/irr/report').at(-1)!.cfg.params).toMatchObject({ date_from: '2026-11-01', date_to: '2026-11-05' }))
+  expect(calls.filter((c) => c.url === '/irr/report').at(-1)!.cfg.params.as_of).toBeUndefined()
+  expect(await screen.findByText('01-11-2026 to 05-11-2026')).toBeInTheDocument()
+  expect(screen.queryByLabelText('As of date')).toBeNull()
+  expect(screen.getByLabelText('Disbursed from')).toHaveValue('2026-11-01')
+
+  await userEvent.click(screen.getByRole('button', { name: 'Loans of Vijayawada' }))
+  const dialog = await screen.findByRole('dialog')
+  expect(await within(dialog).findByText('HLA')).toBeInTheDocument()
+  const req = calls.filter((c) => c.url === '/irr/detail').at(-1)!
+  expect(req.cfg.params).toMatchObject({ branch_id: 'b1', date_from: '2026-11-01', date_to: '2026-11-05' })
+  expect(req.cfg.params.period).toBeUndefined()
+  expect(within(dialog).queryByRole('group', { name: 'Period' })).toBeNull()
+  expect(within(dialog).getByText('Weight (amount × tenure)')).toBeInTheDocument()
+  expect(within(dialog).getByText('72,00,00,000')).toBeInTheDocument()  // 30,00,000 × 240
 })
 
 test('upload problems are a table of row, column, value found and problem, with a download', async () => {

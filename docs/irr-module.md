@@ -115,13 +115,15 @@ Every table endpoint takes `format=csv` or `format=xlsx` to download.
 
 | Endpoint | What |
 |---|---|
-| `GET /report` | TD / MTD / YTD (for the day, month to date, year to date): `as_of` (default: latest disbursement the user can see, else today), `product` HL\|NHL, `level` branch\|region\|company, `region_id`, `branch_id`. Rows with No. (disbursements) and IRR per period, the total, warnings, open exceptions per period |
+| `GET /report` | TD / MTD / YTD (for the day, month to date, year to date): `as_of` (default: latest disbursement the user can see, else today), `product` HL\|NHL, `level` branch\|region\|company, `region_id`, `branch_id`; `periods` to show only some (`periods=MTD`, `periods=TD,YTD`); or `date_from` + `date_to` for one column covering that date range (`RANGE`, any range, across financial years too). Rows with No. (disbursements) and IRR per period, the total, warnings, open exceptions per period. BRD 3.1, "Reporting period" and "Disbursement date: relevant date or date range" |
 | `GET /report/month-by-product` | HL & NHL month to date: HL No., HL IRR, NHL No., NHL IRR per row and in total (each class worked out on its own) |
-| `GET /detail` | The disbursements behind a figure (paged), for one `product` (default HL): account, date, branch, region, product, class, amount, tenure, ROI, Transaction IRR, with the sums that give the IRR (rows, amount, Σ tenure, average tenure, denominator, Σ Transaction IRR) |
+| `GET /detail` | The disbursements behind a figure (paged), for one `product` (default HL), for a `period` or a `date_from` + `date_to` range: account, date, branch, region, product, class, amount, tenure, ROI, weight (amount × tenure, BRD section 9: shown for audit, not the IRR's denominator), Transaction IRR, with the sums that give the IRR (rows, amount, Σ tenure, average tenure, denominator, Σ Transaction IRR) |
 | `GET /reconciliation` | For a period and one `product` (default HL): rows uploaded, included, excluded, exceptions, amount and average tenure by branch, by region and for the company, each worked out separately, with checks that they agree; and the **year to date month by month** (rows, amount, average tenure, denominator Σ amount × average tenure and numerator Σ Transaction IRR per month) with the BRD's YTD check: the year's rows, amounts, tenures and Transaction IRR equal the sum of its months, for the financial year of the period's end, in the same scope and product |
 | `GET /exceptions`, `PATCH /exceptions/{id}` | Disbursements left out for missing / zero / negative tenure or ROI; correcting them (audited) brings them in |
 | `GET /settings`, `PUT /settings` | Product mapping, expected ranges, financial-year start month, decimals, tenure unit of a plain "Tenure" column, branch names in the register |
 | `POST /disbursements`, `GET /disbursements/template`, `GET /uploads` | Upload (with `dry_run`), template, history |
+
+On the report page, **Show** picks TD, MTD and YTD together (the BRD's layout 3.3, the default), one of them, or a **Date range** (two dates in place of As of). Clicking a row opens the loans of the period or range shown.
 
 Web: HR & Admin portal, menu group **IRR** (IRR report, Disbursement register with reconciliation, IRR exceptions,
 IRR settings); Management portal, **IRR report** (read-only, scoped).
