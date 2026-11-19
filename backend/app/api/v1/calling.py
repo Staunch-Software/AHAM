@@ -285,8 +285,16 @@ async def get_caller_days(day: date | None = None, user: User = Depends(require_
         CallerDay.company_id == user.company_id, CallerDay.day == day))).all())
     branches = (await s.execute(select(Branch, Region.name).outerjoin(Region, Region.id == Branch.region_id).where(
         Branch.company_id == user.company_id, Branch.status == "active").order_by(Region.name, Branch.name))).all()
+    uncalled_counts = dict((await s.execute(
+        select(SankalpEntry.branch_id, func.count(SankalpEntry.id)).where(
+            SankalpEntry.company_id == user.company_id,
+            SankalpEntry.status.is_(None),
+            SankalpEntry.call_group.in_(["lead", "dsa_cp"]),
+        ).group_by(SankalpEntry.branch_id)
+    )).all())
     return {"day": day, "items": [{"branch_id": str(b.id), "branch": b.name, "region": rn,
-                                   "caller_id": str(rows[b.id]) if b.id in rows else None} for b, rn in branches]}
+                                   "caller_id": str(rows[b.id]) if b.id in rows else None,
+                                   "uncalled_count": uncalled_counts.get(b.id, 0)} for b, rn in branches]}
 
 
 @router.put("/calls/caller-days")

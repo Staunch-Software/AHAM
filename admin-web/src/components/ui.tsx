@@ -105,7 +105,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   const [open, setOpen] = useState(false)
   const [internalVal, setInternalVal] = useState<string>(String(value ?? defaultValue ?? ''))
   const [search, setSearch] = useState('')
-  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null)
+  const [coords, setCoords] = useState<{ top?: number; bottom?: number; left: number; width: number } | null>(null)
 
   useEffect(() => {
     if (value !== undefined) {
@@ -133,26 +133,51 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
       const rect = triggerRef.current.getBoundingClientRect()
       const spaceBelow = window.innerHeight - rect.bottom
       const spaceAbove = rect.top
-      const menuHeight = 260
-      const placeAbove = spaceBelow < menuHeight && spaceAbove > spaceBelow
+      const menuMaxHeight = 260
+      const placeAbove = spaceBelow < menuMaxHeight && spaceAbove > spaceBelow
       const margin = 4
-      const top = placeAbove ? Math.max(margin, rect.top - menuHeight - margin) : rect.bottom + margin
-      // For form fields match the trigger button width exactly; for small inline buttons ensure at least 150px
-      const width = isAutoWidth ? Math.max(rect.width, 160) : rect.width
+
+      // Match trigger button width or at least 180px for readability
+      const width = Math.max(rect.width, 180)
+
       // Align left edges by default; if it would overflow the right viewport edge, align right edges
       let left = rect.left
       if (left + width > window.innerWidth - margin) {
         left = rect.right - width
       }
       if (left < margin) left = margin
-      setCoords({ top, left, width })
+
+      if (placeAbove) {
+        setCoords({
+          bottom: window.innerHeight - rect.top + margin,
+          left,
+          width,
+        })
+      } else {
+        setCoords({
+          top: rect.bottom + margin,
+          left,
+          width,
+        })
+      }
     }
+
     update()
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
+
+    // Requirement: close dropdown immediately on scroll of page or container
+    const handleScroll = (e: Event) => {
+      if (menuRef.current && (menuRef.current === e.target || menuRef.current.contains(e.target as Node))) {
+        return
+      }
+      setOpen(false)
+      setSearch('')
+    }
+
+    window.addEventListener('resize', handleScroll)
+    window.addEventListener('scroll', handleScroll, true)
     return () => {
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
+      window.removeEventListener('resize', handleScroll)
+      window.removeEventListener('scroll', handleScroll, true)
     }
   }, [open])
 
@@ -213,9 +238,17 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
 
   const isSmall = className?.includes('text-xs') || className?.includes('py-1')
   const isAutoWidth = className?.includes('w-auto') || className?.includes('w-max')
+  const widthMatch = className?.match(/\b(w-(?:auto|full|max|screen|\d+|\[[^\]]+\]))\b/)
+  const widthClass = widthMatch ? widthMatch[1] : (isAutoWidth ? 'w-auto' : 'w-full')
+  const isShrink = className?.includes('shrink-0')
+  const buttonClassName = className
+    ?.replace(/\b(w-(?:auto|full|max|screen|\d+|\[[^\]]+\]))\b/g, '')
+    .replace(/\bshrink-0\b/g, '')
+    .replace(/\bpr-8\b/g, '')
+    .trim()
 
   return (
-    <div className={cx('relative', isAutoWidth ? 'inline-block' : 'block w-full')}>
+    <div className={cx('relative', isAutoWidth ? 'inline-block' : 'block', widthClass, isShrink && 'shrink-0')}>
       <select
         ref={handleRef}
         {...rest}
@@ -246,8 +279,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
           'hover:border-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 active:bg-slate-50',
           disabled ? 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400' : 'cursor-pointer text-slate-800',
           isSmall ? 'px-2.5 py-1 text-xs' : 'px-3 py-2 text-sm',
-          isAutoWidth ? 'w-auto min-w-[180px] sm:min-w-[200px]' : 'w-full',
-          className?.replace(/\bpr-8\b/g, '')
+          'w-full',
+          buttonClassName
         )}
       >
         <span className="truncate">{displayLabel}</span>
@@ -265,9 +298,10 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
           ref={menuRef}
           style={{
             position: 'fixed',
-            top: coords.top,
-            left: coords.left,
-            width: coords.width,
+            top: coords.top !== undefined ? `${coords.top}px` : undefined,
+            bottom: coords.bottom !== undefined ? `${coords.bottom}px` : undefined,
+            left: `${coords.left}px`,
+            width: `${coords.width}px`,
             zIndex: 9999,
           }}
           className="rounded-xl border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-black/5"

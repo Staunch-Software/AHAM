@@ -8,7 +8,7 @@ import { useAuth } from '../../services/auth'
 import { useCallers } from '../../services/meta'
 import type { CallRow } from '../../types'
 
-interface Days { day: string; items: { branch_id: string; branch: string; region: string | null; caller_id: string | null }[] }
+interface Days { day: string; items: { branch_id: string; branch: string; region: string | null; caller_id: string | null; uncalled_count?: number }[] }
 interface Overview { callers: { id: string; name: string; active: boolean; open: number; attempts_today: number; first_try_overdue: number }[]; unassigned: number; first_try_overdue: number; items: CallRow[] }
 interface Run { id: string; run_date: string; started_at: string; started_by: string; counts: { selection: Record<string, number>; allocated: Record<string, number>; unreturned: number } }
 
@@ -86,21 +86,66 @@ export default function DailyRun() {
                   Saved.{moved ? ` ${moved} new ${moved === 1 ? 'entry' : 'entries'} not yet called went to the caller now set for ${moved === 1 ? 'its' : 'their'} branch. Retries stay with their first caller.` : ''}
                 </p>
               )}
-              <ExportBar name={`Callers of the day ${day}`} header={['Branch', 'Region', 'Caller of the day']} className="-mt-2 px-0"
-                rows={() => (days.data?.items ?? []).map((b) => [b.branch, b.region ?? '', callerName(pick[b.branch_id])])} />
-              <div className="mb-3 flex items-center gap-2 text-xs text-slate-500 shrink-0">Set all to
-                <Select className="w-auto py-1 text-xs" value="" onChange={(e) => e.target.value && setAll(e.target.value)}><option value="">choose…</option>{activeCallers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}</Select>
+              <div className="mb-3 flex items-center justify-between gap-2 text-xs text-slate-500 shrink-0 whitespace-nowrap">
+                <div className="flex items-center gap-2 shrink-0">
+                  <span>Set all to</span>
+                  <Select className="w-32 shrink-0 py-1 text-xs" value="" onChange={(e) => e.target.value && setAll(e.target.value)}>
+                    <option value="">choose…</option>{activeCallers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2.5 shrink-0">
+                  {(days.data?.items.reduce((s, b) => s + (b.uncalled_count ?? 0), 0) ?? 0) > 0 ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-gold-50 px-2 py-0.5 text-[11px] font-semibold text-gold-900 border border-gold-200 shrink-0">
+                      <span className="h-1.5 w-1.5 rounded-full bg-gold-500" />
+                      {days.data?.items.reduce((s, b) => s + (b.uncalled_count ?? 0), 0)} not called yet
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-400 shrink-0">0 uncalled</span>
+                  )}
+                  <ExportBar
+                    name={`Callers of the day ${day}`}
+                    header={['Branch', 'Region', 'Uncalled entries', 'Caller of the day']}
+                    className="p-0 gap-1.5 flex-nowrap shrink-0"
+                    rows={() => (days.data?.items ?? []).map((b) => [b.branch, b.region ?? '', String(b.uncalled_count ?? 0), callerName(pick[b.branch_id])])}
+                  />
+                </div>
               </div>
-              <div className="flex-1 min-h-0 max-h-[170px] overflow-y-auto rounded-xl border border-slate-100 custom-scrollbar">
+              <div className="flex-1 min-h-0 max-h-[min(480px,52vh)] overflow-y-auto rounded-xl border border-slate-100 custom-scrollbar">
                 <table className="w-full text-sm">
                   <tbody className="divide-y divide-slate-100">
                     {days.data?.items.map((b) => (
-                      <tr key={b.branch_id}>
-                        <td className="px-3 py-2"><span className="font-medium text-slate-800">{b.branch}</span><span className="ml-2 text-xs text-slate-400">{b.region}</span></td>
-                        <td className="w-48 px-3 py-1.5">
-                          <Select aria-label={`Caller for ${b.branch}`} className="py-1.5" value={pick[b.branch_id] ?? ''} onChange={(e) => setPick({ ...pick, [b.branch_id]: e.target.value })}>
-                            <option value="">No caller</option>{activeCallers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-                          </Select>
+                      <tr key={b.branch_id} className="hover:bg-slate-50/60">
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-slate-800">{b.branch}</span>
+                            <span className="text-xs text-slate-400">{b.region}</span>
+                          </div>
+                        </td>
+                        <td className="w-72 px-3 py-1.5 text-right">
+                          <div className="flex items-center justify-end gap-2.5">
+                            <div className="w-24 text-right shrink-0">
+                              {(b.uncalled_count ?? 0) > 0 ? (
+                                <span
+                                  className="inline-flex items-center rounded-full bg-gold-50 px-2 py-0.5 text-[11px] font-semibold text-gold-800 border border-gold-200/80 whitespace-nowrap"
+                                  title={`${b.uncalled_count} uncalled entries waiting in ${b.branch}`}
+                                >
+                                  {b.uncalled_count} uncalled
+                                </span>
+                              ) : (
+                                <span className="text-xs text-slate-300 font-normal tabular whitespace-nowrap">
+                                  0 uncalled
+                                </span>
+                              )}
+                            </div>
+                            <Select
+                              aria-label={`Caller for ${b.branch}`}
+                              className="w-48 shrink-0 py-1.5 text-xs"
+                              value={pick[b.branch_id] ?? ''}
+                              onChange={(e) => setPick({ ...pick, [b.branch_id]: e.target.value })}
+                            >
+                              <option value="">No caller</option>{activeCallers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                            </Select>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -111,24 +156,43 @@ export default function DailyRun() {
           )}
         </Card>
 
-        <div className="space-y-6">
-          <Card title="2 · Run the selection" subtitle="Checks each new entry in order (no valid number, repeat, duplicate, being called, spoken to) and fills the lists">
-            <Button variant="gold" className="w-full py-2.5" disabled={run.isPending} onClick={() => run.mutate()}><Play size={16} aria-hidden="true" />{run.isPending ? 'Running…' : `${dayRuns.length ? 'Run again' : 'Run'} for ${day}`}</Button>
-            {ranNow && !did(ranNow) && (
-              <p className="mt-4 rounded-xl bg-brand-50 px-3 py-2 text-sm text-brand-800" role="status">
-                Nothing new to select{dayRuns.length ? `: ${day} was already run, below` : ` for ${day}`}. Running again only adds entries and calls that came in since.
-              </p>
-            )}
-            {dayRuns.map((r) => (
-              <div key={r.id} className="mt-4">
-                <p className="mb-1 text-xs font-medium text-slate-500">Run at {clock(r.started_at)} by {r.started_by}</p>
-                <RunCounts c={r.counts} />
+        <div className="flex flex-col h-full justify-between gap-4">
+          <Card
+            title="2 · Run the selection"
+            subtitle="Checks each new entry in order (no valid number, repeat, duplicate, being called, spoken to) and fills the lists"
+            className="flex-1 flex flex-col"
+          >
+            <div className="flex-1 flex flex-col justify-between min-h-0">
+              <div className="space-y-3">
+                <Button variant="gold" className="w-full py-2.5" disabled={run.isPending} onClick={() => run.mutate()}>
+                  <Play size={16} aria-hidden="true" />{run.isPending ? 'Running…' : `${dayRuns.length ? 'Run again' : 'Run'} for ${day}`}
+                </Button>
+                {ranNow && !did(ranNow) && (
+                  <p className="rounded-xl bg-brand-50 px-3 py-2 text-sm text-brand-800" role="status">
+                    Nothing new to select{dayRuns.length ? `: ${day} was already run, below` : ` for ${day}`}. Running again only adds entries and calls that came in since.
+                  </p>
+                )}
+                {dayRuns.map((r) => (
+                  <div key={r.id} className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
+                    <p className="mb-1 text-xs font-medium text-slate-500">Run at {clock(r.started_at)} by {r.started_by}</p>
+                    <RunCounts c={r.counts} />
+                  </div>
+                ))}
+                {!dayRuns.length && !ranNow && (
+                  <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200/80 bg-slate-50/40 py-6 text-center">
+                    <p className="text-xs font-medium text-slate-500">Not run yet for {day}</p>
+                    <p className="mt-1 text-[11px] text-slate-400">Click &ldquo;Run for {day}&rdquo; to allocate entries to callers.</p>
+                  </div>
+                )}
               </div>
-            ))}
-            {!dayRuns.length && !ranNow && <p className="mt-3 text-xs text-slate-500">Not run yet for {day}.</p>}
-            {overview.data?.unassigned ? <p className="mt-3 text-sm text-roof-600">{overview.data.unassigned} have no caller yet: set the branch’s caller and Save, or assign them below.</p> : null}
+              {overview.data?.unassigned ? (
+                <p className="mt-4 rounded-xl bg-roof-50 border border-roof-200/70 px-3 py-2 text-xs font-medium text-roof-700">
+                  {overview.data.unassigned} have no caller yet: set the branch’s caller and Save, or assign them below.
+                </p>
+              ) : null}
+            </div>
           </Card>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-3 shrink-0">
             <StatCard label="Unassigned work" value={overview.data?.unassigned ?? '—'} tone="red" />
             <StatCard label="First try overdue" value={overview.data?.first_try_overdue ?? '—'} tone="gold" testId="kpi-overdue" hint="On a list, not called within the target" />
             <StatCard label="Tries today" value={overview.data?.callers.reduce((a, c) => a + c.attempts_today, 0) ?? '—'} tone="green" />
