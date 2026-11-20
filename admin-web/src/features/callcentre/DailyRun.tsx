@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRightLeft, Copy, FileSpreadsheet, Play, Save, UserPlus } from 'lucide-react'
+import { ArrowRightLeft, Copy, FileSpreadsheet, Play, Save, UserPlus, Wand2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, Card, EmptyState, ErrorBox, ExportBar, Input, Note, PageTitle, Select, Skeleton, StatCard, Table, Td } from '../../components/ui'
+import { Button, Card, cx, EmptyState, ErrorBox, ExportBar, Input, Note, PageTitle, Select, Skeleton, StatCard, Table, Td } from '../../components/ui'
 import { api, download, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
 import { useCallers } from '../../services/meta'
@@ -10,6 +10,12 @@ import type { CallRow } from '../../types'
 
 interface Days { day: string; items: { branch_id: string; branch: string; region: string | null; caller_id: string | null; uncalled_count?: number }[] }
 interface Overview { callers: { id: string; name: string; active: boolean; open: number; attempts_today: number; first_try_overdue: number }[]; unassigned: number; first_try_overdue: number; items: CallRow[] }
+// Caller allocation by language, absence and the daily limit (GET /calls/day-plan): flags and suggestions only
+interface Flag { code: 'no_caller' | 'inactive' | 'absent' | 'language' | 'over_limit'; message: string }
+interface PlanBranch { branch_id: string; branch: string; caller_id: string | null; caller: string | null; waiting: number; flags: Flag[]; suggestion: { caller_id: string; caller: string; room: number } | null }
+interface PlanCaller { id: string; name: string; absent: boolean; load: number; room: number; over: number }
+interface PlanMove { kind: 'entries' | 'branch'; from_id: string; from: string; to_id: string; to: string; branch_id: string; branch: string; count: number; languages: string[] }
+interface DayPlan { day: string; limit: number; branches: PlanBranch[]; callers: PlanCaller[]; moves: PlanMove[] }
 interface Run { id: string; run_date: string; started_at: string; started_by: string; counts: { selection: Record<string, number>; allocated: Record<string, number>; unreturned: number } }
 
 const isoToday = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
@@ -42,6 +48,9 @@ export default function DailyRun() {
   const days = useQuery({ queryKey: ['caller-days', day], queryFn: async () => (await api.get<Days>('/calls/caller-days', { params: { day } })).data })
   const overview = useQuery({ queryKey: ['calls', 'overview'], queryFn: async () => (await api.get<Overview>('/calls/allocations', { params: { unassigned: true } })).data })
   const runs = useQuery({ queryKey: ['calls', 'runs'], queryFn: async () => (await api.get<Run[]>('/calls/runs')).data })
+  const plan = useQuery({ queryKey: ['calls', 'day-plan', day], queryFn: async () => (await api.get<DayPlan>('/calls/day-plan', { params: { day } })).data })
+  const planOf = Object.fromEntries((plan.data?.branches ?? []).map((b) => [b.branch_id, b]))
+  const loadOf = Object.fromEntries((plan.data?.callers ?? []).map((c) => [c.id, c]))
   const [pick, setPick] = useState<Record<string, string>>({})
   useEffect(() => { if (days.data) setPick(Object.fromEntries(days.data.items.map((i) => [i.branch_id, i.caller_id ?? '']))) }, [days.data])
   const refresh = () => ['caller-days', 'calls', 'entries', 'dashboard'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }))
@@ -51,6 +60,17 @@ export default function DailyRun() {
   const save = useMutation({ mutationFn: async () => (await api.put<{ moved: number }>('/calls/caller-days', { day, assignments: Object.entries(pick).map(([branch_id, caller_id]) => ({ branch_id, caller_id: caller_id || null })) })).data, onSuccess: saved })
   const copy = useMutation({ mutationFn: async () => (await api.post<{ moved: number }>('/calls/caller-days/copy', { from_day: isoMinus(day, 1), to_day: day })).data, onSuccess: saved })
   const run = useMutation({ mutationFn: async () => (await api.post('/calls/runs', { run_date: day })).data as Run['counts'] & { run_date: string }, onSuccess: refresh })
+  // by language, absence and room: the usual caller, else the present caller who speaks the language with most room
+  const [autoNote, setAutoNote] = useState<{ assigned: number; no_caller: string[] } | null>(null)
+  const auto = useMutation({ mutationFn: async () => (await api.post<{ moved: number; auto: { assigned: number; no_caller: string[] } }>('/calls/caller-days/auto', { day })).data,
+    onSuccess: (r) => { setAutoNote(r.auto); saved(r) } })
+  // one click: this branch's caller for the day (its waiting new entries follow), or N new entries to another caller
+  const pickCaller = useMutation({ mutationFn: async ({ branch, caller }: { branch: string; caller: string }) => (await api.put<{ moved: number }>('/calls/caller-days', { day, assignments: [{ branch_id: branch, caller_id: caller }] })).data, onSuccess: saved })
+  const applyMove = useMutation({
+    mutationFn: async (m: PlanMove) => (m.kind === 'entries'
+      ? (await api.post<{ moved: number }>('/calls/allocations/move', { from_caller_id: m.from_id, to_caller_id: m.to_id, branch_id: m.branch_id, count: m.count })).data
+      : (await api.put<{ moved: number }>('/calls/caller-days', { day, assignments: [{ branch_id: m.branch_id, caller_id: m.to_id }] })).data),
+    onSuccess: refresh })
   const assign = useMutation({ mutationFn: ({ id, caller }: { id: string; caller: string }) => api.post(`/calls/allocations/${id}/assign`, { caller_id: caller }), onSuccess: refresh })
   // A caller is off: their whole open list (retries and PRIORITY calls too) goes to another caller for the day.
   const move = useMutation({ mutationFn: async ({ from, to }: { from: string; to: string }) => (await api.post<{ moved: number }>('/calls/allocations/move', { from_caller_id: from, to_caller_id: to })).data, onSuccess: refresh })
@@ -68,7 +88,7 @@ export default function DailyRun() {
         actions={<Input type="date" aria-label="Run date" value={day} max={isoToday()} onChange={(e) => { setDay(e.target.value); setMoved(null) }} className="w-auto" />}>
         Daily run & allocation
       </PageTitle>
-      <ErrorBox error={[save.error, copy.error, run.error, assign.error, move.error, sheet.error].map((e) => e && errorMessage(e)).find(Boolean) ?? null} />
+      <ErrorBox error={[save.error, copy.error, run.error, assign.error, move.error, sheet.error, auto.error, pickCaller.error, applyMove.error].map((e) => e && errorMessage(e)).find(Boolean) ?? null} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <Card
@@ -76,11 +96,17 @@ export default function DailyRun() {
           subtitle="New entries of a branch go to its caller of the day"
           className="h-full flex flex-col"
           actions={<div className="flex gap-2">
+            <Button variant="secondary" small disabled={auto.isPending} onClick={() => auto.mutate()} title="Each branch's usual caller; for an absent one, the caller who speaks the language with the most room (Callers page)"><Wand2 size={14} aria-hidden="true" />Auto-assign</Button>
             <Button variant="secondary" small disabled={copy.isPending} onClick={() => copy.mutate()}><Copy size={14} aria-hidden="true" />Copy yesterday</Button>
             <Button small disabled={save.isPending} onClick={() => save.mutate()}><Save size={14} aria-hidden="true" />Save</Button>
           </div>}>
           {days.isLoading ? <Skeleton className="h-40" /> : (
             <div className="flex-1 flex flex-col min-h-0">
+              {autoNote && (
+                <p className="mb-3 rounded-xl bg-brand-50 px-3 py-2 text-sm text-brand-800 shrink-0" role="status">
+                  Auto-assigned {autoNote.assigned} {autoNote.assigned === 1 ? 'branch' : 'branches'}.{autoNote.no_caller.length ? ` No present caller speaks the language of ${autoNote.no_caller.join(', ')}: set one on the Callers page.` : ''}
+                </p>
+              )}
               {moved !== null && (
                 <p className="mb-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800 shrink-0" role="status">
                   Saved.{moved ? ` ${moved} new ${moved === 1 ? 'entry' : 'entries'} not yet called went to the caller now set for ${moved === 1 ? 'its' : 'their'} branch. Retries stay with their first caller.` : ''}
@@ -120,6 +146,15 @@ export default function DailyRun() {
                             <span className="font-medium text-slate-800">{b.branch}</span>
                             <span className="text-xs text-slate-400">{b.region}</span>
                           </div>
+                          {(planOf[b.branch_id]?.flags ?? []).map((f) => (
+                            <p key={f.code} className={cx('mt-0.5 text-[11px] font-medium', f.code === 'over_limit' ? 'text-gold-800' : 'text-roof-700')}>{f.message}</p>
+                          ))}
+                          {planOf[b.branch_id]?.suggestion && (
+                            <button type="button" className="mt-0.5 text-[11px] font-semibold text-brand-700 hover:underline disabled:opacity-50" disabled={pickCaller.isPending}
+                              onClick={() => pickCaller.mutate({ branch: b.branch_id, caller: planOf[b.branch_id]!.suggestion!.caller_id })}>
+                              Use {planOf[b.branch_id]!.suggestion!.caller} (room for {planOf[b.branch_id]!.suggestion!.room})
+                            </button>
+                          )}
                         </td>
                         <td className="w-72 px-3 py-1.5 text-right">
                           <div className="flex items-center justify-end gap-2.5">
@@ -203,9 +238,24 @@ export default function DailyRun() {
       <Card title="Callers" subtitle={`A caller who is off today: move their open list (retries and PRIORITY calls too) to another caller. Call sheet: that caller's list for ${day} in Excel, as the hand-made call sheets, with the tries, answers and lead card recorded so far.`} className="mt-6" flush
         actions={<Button small variant="secondary" disabled={sheet.isPending} onClick={() => sheet.mutate(undefined)}><FileSpreadsheet size={14} aria-hidden="true" />All call sheets (Excel)</Button>}>
         {move.data && <p className="px-5 pt-3 text-sm text-emerald-700" role="status">{move.data.moved} moved.</p>}
-        <Table head={['Caller', 'Still to call today', 'Not called within the target (overdue)', 'Calls made today', 'Move today’s list to', '']} exportName="Callers today">
+        {applyMove.data && <p className="px-5 pt-3 text-sm text-emerald-700" role="status">{applyMove.data.moved} moved.</p>}
+        {(plan.data?.moves ?? []).length > 0 && (
+          <div className="mx-5 mt-3 space-y-1.5 rounded-xl border border-gold-200 bg-gold-50/60 px-3 py-2" data-testid="limit-moves">
+            <p className="text-xs font-semibold text-gold-900">Over the daily limit of {plan.data!.limit}</p>
+            {plan.data!.moves.map((m) => (
+              <p key={`${m.from_id}-${m.branch_id}`} className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-700">
+                <span>{m.from} has {loadOf[m.from_id]?.load ?? '—'} today. {m.to} speaks {m.languages.join(' / ') || 'the language'} and has room: {m.kind === 'entries' ? `${m.count} of ${m.branch}'s new entries` : `${m.branch} for the day (${m.count} new)`}.</span>
+                <Button small variant="secondary" disabled={applyMove.isPending} onClick={() => applyMove.mutate(m)}>
+                  {m.kind === 'entries' ? `Move ${m.count}` : `Give ${m.branch} to ${m.to}`}
+                </Button>
+              </p>
+            ))}
+          </div>
+        )}
+        <Table head={['Caller', 'Still to call today', 'List / limit', 'Not called within the target (overdue)', 'Calls made today', 'Move today’s list to', '']} exportName="Callers today">
           {overview.data?.callers.map((c) => (
-            <tr key={c.id}><Td className="font-medium">{c.name}{!c.active && <span className="ml-2 text-xs text-slate-400">inactive</span>}</Td><Td className="tabular">{c.open}</Td>
+            <tr key={c.id}><Td className="font-medium">{c.name}{!c.active && <span className="ml-2 text-xs text-slate-400">inactive</span>}{loadOf[c.id]?.absent && <span className="ml-2 rounded-full bg-roof-50 px-2 py-0.5 text-[11px] font-semibold text-roof-700">absent today</span>}</Td><Td className="tabular">{c.open}</Td>
+              <Td className={cx('tabular', (loadOf[c.id]?.over ?? 0) > 0 && 'font-semibold text-roof-700')}>{loadOf[c.id] ? `${loadOf[c.id]!.load} / ${plan.data!.limit}` : '—'}</Td>
               <Td className="tabular">{c.first_try_overdue || 0}</Td><Td className="tabular">{c.attempts_today}</Td>
               <Td>{c.open > 0 ? (
                 <Select aria-label={`Move ${c.name}'s list`} className="w-44 py-1.5" value="" disabled={move.isPending}

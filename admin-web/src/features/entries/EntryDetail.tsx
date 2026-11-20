@@ -57,7 +57,7 @@ export default function EntryDetail() {
         <div className="min-w-0">
           <p className="font-mono text-sm font-semibold text-brand-700" data-testid="entry-code">{e.entry_code}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-brand-900">{e.person_name}</h1>
-          <p className="mt-1 text-sm text-slate-500">{e.category_label}{e.cp_subtype_label && ` · ${e.cp_subtype_label}`} · Mobile: <span className="tabular">{e.phone}</span> · met by {e.so_name} ({e.so_employee_code}), {e.branch_name}{e.source === 'import' && ' · entered by bulk upload, not on the phone'}</p>
+          <p className="mt-1 text-sm text-slate-500">{e.category_label}{e.cp_subtype_label && ` · ${e.cp_subtype_label}`} · Mobile: <span className="tabular">{e.phone}</span> · met by {e.so_name} ({e.so_employee_code}), {e.branch_name}{e.source === 'import' && ' · entered by bulk upload, not on the phone'}{e.source === 'takeoff' && ' · loaded from the Takeoff master (Excel)'}</p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <RagBadge value={e.rag} overridden={e.rag_overridden} />
             <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs" data-testid="current-status"><StatusText value={e.current_status} /></span>

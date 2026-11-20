@@ -1,11 +1,13 @@
 """Management portal hand-off (sections 12-13): the branch's leads and answers, corrections, the monitor's queues."""
 import uuid
 from datetime import date, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.api.deps import require_any_perm, require_perm
 from app.api.v1.entries import entry_row, get_scoped_entry
@@ -89,17 +91,79 @@ async def post_answer(entry_id: uuid.UUID, body: BranchAnswerIn, user: User = De
 
 @router.get("/branch/actions")
 async def so_actions(expired: bool = False, action: str | None = None, page: int = Query(1, ge=1),
-                     page_size: int = Query(100, ge=1, le=500),
+                     page_size: int = Query(100, ge=1, le=500), date_from: date | None = None, date_to: date | None = None,
                      user: User = Depends(require_perm("entries.read")), s: AsyncSession = Depends(get_session)):
     """12.1: open SO / branch actions in my scope (correct a number, DSA/CP follow-up, lead actions). With
     expired=true: actions whose window (12.3) ran out before anyone acted on them. action: one action, or "lead"."""
     col = SankalpEntry.expired_action if expired else SankalpEntry.so_action
-    q = _joined().where(await entry_scope(s, user), col.is_not(None))
+    q = _joined().where(await entry_scope(s, user), col.is_not(None), *entry_dates(date_from, date_to))
     if action:
         q = q.where(col.in_(R.BRANCH_LEAD_ACTIONS) if action == "lead" else col == action)
     if expired:
         return await _page(s, q, [SankalpEntry.expired_on.desc(), SankalpEntry.entry_code], page, page_size)
     return await _page(s, q, [SankalpEntry.so_action_date.nulls_last(), SankalpEntry.entry_code], page, page_size)
+
+
+# The Takeoff master's "Totals by region" on its two SO / branch action sheets. A DSA/CP follow-up, and a correct-number
+# or branch follow-up on a DSA/CP entry, are on the DSA / contact point list; every other action is on the leads list
+# (a DSA/CP who needs a home loan himself gets lead actions, so he counts with the leads). Each list in the Excel's
+# column order; "Pre-Takeoff follow-up" (entries from before 22 Sep) is not built, and "Log in under green channel"
+# has its own column so the totals always add up to the list below them.
+ACTION_LISTS = {
+    "lead": [R.ACT_VISIT, R.ACT_COLLECT_DOCS, R.ACT_FOLLOW_UP_LEAD, R.ACT_CONFIRM_LOGIN, R.ACT_GREEN_LOGIN, R.ACT_SERVICE,
+             R.ACT_CORRECT_NUMBER, R.ACT_BRANCH_FOLLOWUP],
+    "dsa": [R.ACT_DSA_FOLLOWUP, R.ACT_CORRECT_NUMBER, R.ACT_BRANCH_FOLLOWUP],
+}
+
+
+def entry_dates(date_from: date | None, date_to: date | None) -> list:
+    """Only entries made in this range of entry dates (either end may be open)."""
+    return [c for c in (SankalpEntry.entry_date >= date_from if date_from else None,
+                        SankalpEntry.entry_date <= date_to if date_to else None) if c is not None]
+
+
+def on_dsa_list(col):
+    return or_(col == R.ACT_DSA_FOLLOWUP,
+               and_(SankalpEntry.call_group == "dsa_cp", col.in_([R.ACT_CORRECT_NUMBER, R.ACT_BRANCH_FOLLOWUP])))
+
+
+@router.get("/branch/actions/totals")
+async def action_totals(list_: Literal["lead", "dsa"] = Query("lead", alias="list"),
+                        by: Literal["region", "branch"] = "region", expired: bool = False,
+                        date_from: date | None = None, date_to: date | None = None,
+                        user: User = Depends(require_perm("entries.read")), s: AsyncSession = Depends(get_session)):
+    """Open (or expired) SO / branch actions counted per action, by region or by branch, for the leads list or the
+    DSA / contact point list. Counted where the lead is worked (the handling branch, else the SO's branch), the same
+    entries as the list."""
+    col = SankalpEntry.expired_action if expired else SankalpEntry.so_action
+    on_list = on_dsa_list(col) if list_ == "dsa" else ~on_dsa_list(col)
+    wb, wr = aliased(Branch), aliased(Region)
+    rows = (await s.execute(
+        select(wb.id, wb.name, wr.id, wr.name, col, func.count()).select_from(SankalpEntry)
+        .join(wb, wb.id == WORK_BRANCH).outerjoin(wr, wr.id == wb.region_id)
+        .where(await entry_scope(s, user), col.is_not(None), on_list, *entry_dates(date_from, date_to))
+        .group_by(wb.id, wb.name, wr.id, wr.name, col))).all()
+    columns = list(ACTION_LISTS[list_])
+    columns += sorted({a for *_, a, _ in rows if a not in columns})  # never drop a count, whatever the action
+    out: dict = {}
+    if by == "region":  # every region in my scope is listed, as the Excel lists all seven
+        visible = await visible_branch_ids(s, user)
+        q = select(Region.id, Region.name).where(Region.company_id == user.company_id)
+        if visible is not None:
+            q = q.where(Region.id.in_(select(Branch.region_id).where(Branch.id.in_(visible or {uuid.uuid4()}))))
+        for rid, rname in (await s.execute(q)).all():
+            out[rid] = {"id": str(rid), "label": rname, "region": rname, "counts": {}}
+    for bid, bname, rid, rname, action, n in rows:
+        key = rid if by == "region" else bid
+        row = out.setdefault(key, {"id": str(key) if key else None, "label": (rname if by == "region" else bname) or "No region",
+                                   "region": rname, "counts": {}})
+        row["counts"][action] = row["counts"].get(action, 0) + n
+    items = sorted(out.values(), key=lambda r: ((r["region"] or "~"), r["label"]))
+    for r in items:
+        r["total"] = sum(r["counts"].values())
+    total = {a: sum(r["counts"].get(a, 0) for r in items) for a in columns}
+    return {"list": list_, "by": by, "expired": expired, "columns": columns, "rows": items,
+            "total": {"counts": total, "total": sum(total.values())}}
 
 
 @router.get("/branch/missed-dates")

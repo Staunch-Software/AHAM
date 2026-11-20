@@ -44,8 +44,10 @@ def _csv(name: str, header: list[str], rows) -> StreamingResponse:
 # ---------------------------------------------------------------- dashboard
 @router.get("/dashboard")
 async def dashboard(period: str = "today", date_from: date | None = None, date_to: date | None = None,
+                    conv_from: date | None = None, conv_to: date | None = None,
                     user: User = Depends(require_perm("dashboard.read")), s: AsyncSession = Depends(get_session)):
-    """Entries counted on their count date, in the signed-in user's scope."""
+    """Entries counted on their count date, in the signed-in user's scope. The lead conversion has its own range of
+    entry dates (conv_from / conv_to): by default every entry from Takeoff start to today."""
     first, last = await _days(s, user, period, date_from, date_to)
     scope = await entry_scope(s, user)
     in_period = [scope, SankalpEntry.count_date >= first, SankalpEntry.count_date <= last]
@@ -83,13 +85,16 @@ async def dashboard(period: str = "today", date_from: date | None = None, date_t
     # (not the period picked, since a lead logs in weeks after it was entered). Validated lead-type entries, and how
     # many of them are the Sankalp success (logged in), were rejected, or are still open.
     takeoff_start = (await load_settings(s, user.company_id)).takeoff_start
+    conv_first = max(conv_from or takeoff_start, takeoff_start)  # a Takeoff lead is never older than Takeoff start
+    conv_last = conv_to or await company_today(s, user.company_id)
     lead_type = or_(SankalpEntry.call_group == "lead", SankalpEntry.status == R.VALIDATED_CONVERTED,
                     SankalpEntry.lead_outcome.is_not(None))
     conversion = (await s.execute(
         select(Region.name, func.count(), func.count().filter(SankalpEntry.sankalp_success),
                func.count().filter(SankalpEntry.lead_outcome == R.OUTCOME_REJECTED))
         .join(Branch, Branch.id == SankalpEntry.branch_id).outerjoin(Region, Region.id == Branch.region_id)
-        .where(scope, SankalpEntry.entry_date >= takeoff_start, SankalpEntry.customer_validated, lead_type)
+        .where(scope, SankalpEntry.entry_date >= conv_first, SankalpEntry.entry_date <= conv_last,
+               SankalpEntry.customer_validated, lead_type)
         .group_by(Region.name).order_by(Region.name))).all()
     conv_rows = [{"region": rn, "validated": n, "logged_in": li, "rejected": rj, "open": n - li - rj}
                  for rn, n, li, rj in conversion]
@@ -102,7 +107,7 @@ async def dashboard(period: str = "today", date_from: date | None = None, date_t
         "branches": [{"branch_id": str(b), "branch": n, "region": rn, "entries": t, "lead_prospect": lp, "validated": v,
                       "logged_in": li, "red": rd, "amber": am, "green": gr, "sos": so}
                      for b, n, rn, t, lp, v, li, rd, am, gr, so in branches],
-        "conversion": {"since": takeoff_start, "regions": conv_rows,
+        "conversion": {"since": takeoff_start, "from": conv_first, "to": conv_last, "regions": conv_rows,
                        "total": {k: sum(r[k] for r in conv_rows) for k in ("validated", "logged_in", "rejected", "open")}},
     }
 

@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Award, BadgeCheck, Clock, IdCard, ListChecks, Target, UserCheck, Users } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Card, EmptyState, ErrorBox, PageTitle, RAG_LABEL, Segmented, Skeleton, StatCard, Table, Td } from '../../components/ui'
+import { Card, EmptyState, ErrorBox, Input, PageTitle, RAG_LABEL, Segmented, Skeleton, StatCard, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
 
@@ -14,7 +14,7 @@ interface Dash {
   by_status: Record<string, number>
   trend: { day: string; entries: number }[]
   branches: { branch_id: string; branch: string; region: string | null; entries: number; lead_prospect: number; validated: number; logged_in: number; red: number; amber: number; green: number; sos: number }[]
-  conversion: { since: string; regions: ConversionRow[]; total: Omit<ConversionRow, 'region'> }
+  conversion: { since: string; from?: string; to?: string; regions: ConversionRow[]; total: Omit<ConversionRow, 'region'> }
 }
 
 interface ConversionRow { region: string | null; validated: number; logged_in: number; rejected: number; open: number }
@@ -77,9 +77,12 @@ function Trend({ trend }: { trend: Dash['trend'] }) {
 export default function Dashboard() {
   const { me, can, path } = useAuth()
   const [period, setPeriod] = useState<Period>('today')
+  // the lead conversion's own range of entry dates (blank: from Takeoff start to today)
+  const [convFrom, setConvFrom] = useState('')
+  const [convTo, setConvTo] = useState('')
   const { data, isLoading, error } = useQuery({
-    queryKey: ['dashboard', period],
-    queryFn: async () => (await api.get<Dash>('/dashboard', { params: { period } })).data,
+    queryKey: ['dashboard', period, convFrom, convTo],
+    queryFn: async () => (await api.get<Dash>('/dashboard', { params: { period, conv_from: convFrom || undefined, conv_to: convTo || undefined } })).data,
     placeholderData: keepPreviousData,
   })
   const scope = me?.branch_name ?? me?.cluster_name ?? me?.region_name ?? 'All regions'
@@ -134,7 +137,15 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          <Card title="Sankalp lead conversion" subtitle={`Takeoff leads validated by the call centre, by region · every entry since Takeoff start (${data.conversion.since}), whatever the period above`} className="mt-6" flush>
+          <Card title="Sankalp lead conversion" className="mt-6" flush
+            subtitle={`Takeoff leads validated by the call centre, by region · entries made from ${data.conversion.from ?? data.conversion.since} to ${data.conversion.to ?? 'today'}, whatever the period above`}
+            actions={<div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <span>Entries from</span>
+              <Input type="date" aria-label="Lead conversion from" className="w-auto py-1 text-xs" value={convFrom || data.conversion.from || ''} min={data.conversion.since} onChange={(e) => setConvFrom(e.target.value)} />
+              <span>to</span>
+              <Input type="date" aria-label="Lead conversion to" className="w-auto py-1 text-xs" value={convTo || data.conversion.to || ''} onChange={(e) => setConvTo(e.target.value)} />
+              {(convFrom || convTo) && <button type="button" className="font-semibold text-brand-700 hover:underline" onClick={() => { setConvFrom(''); setConvTo('') }}>All since Takeoff start</button>}
+            </div>}>
             {data.conversion.regions.length === 0 ? <EmptyState icon={<BadgeCheck size={20} />} title="No validated leads yet." /> : (
               <Table head={['Region', 'Validated leads', 'Logged in', 'Rejected', 'Open', 'Login %']} exportName="Lead conversion">
                 {data.conversion.regions.map((c) => (

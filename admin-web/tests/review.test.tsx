@@ -1,5 +1,5 @@
 // The web side of the feature-review fixes (docs/feature-review.md), numbered as in the review.
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { isSunday, parseWhole, rupeesInWords } from '../src/services/format'
@@ -92,6 +92,7 @@ test('24.1 / 27.1 open actions come in pages, and expired ones have their own vi
   const gone = entry({ id: 'e2', entry_code: 'AHFL90001-20261020-110000', expired_action: 'Correct customer number', expired_on: '2026-11-04' })
   installApiMock('branch_manager', {
     '/branch/actions': (cfg: { params: { expired?: boolean } }) => ({ items: cfg.params.expired ? [gone] : [open], total: 1, page: 1, page_size: 100 }),
+    '/branch/actions/totals': { columns: [], rows: [], total: { counts: {}, total: 0 } },
   })
   renderApp('/manage/actions')
   expect(await screen.findByText('Visit customer')).toBeInTheDocument()
@@ -202,4 +203,36 @@ test('the Master owner downloads the call sheets of the day: every caller, or on
   // the caller-of-the-day table can be exported too
   const days = screen.getByText('Vijayawada').closest('table')!.parentElement!.parentElement!
   expect(within(days).getByText('Export:')).toBeInTheDocument()
+})
+
+test('open actions are totalled per action, by region or by branch, for leads or for DSAs and contact points', async () => {
+  const cols = ['Visit customer', 'Correct customer number']
+  const byRegion = { columns: cols, total: { counts: { 'Visit customer': 3, 'Correct customer number': 2 }, total: 5 }, rows: [
+    { id: 'r1', label: 'AP & TG', region: 'AP & TG', counts: { 'Visit customer': 3 }, total: 3 },
+    { id: 'r2', label: 'Karnataka', region: 'Karnataka', counts: { 'Correct customer number': 2 }, total: 2 }] }
+  const byBranch = { ...byRegion, rows: [
+    { id: 'b1', label: 'Vijayawada', region: 'AP & TG', counts: { 'Visit customer': 3 }, total: 3 },
+    { id: 'b9', label: 'Mysuru', region: 'Karnataka', counts: { 'Correct customer number': 2 }, total: 2 }] }
+  installApiMock('branch_manager', {
+    '/branch/actions': { items: [], total: 0, page: 1, page_size: 100 },
+    '/branch/actions/totals': (cfg: { params: { by: string } }) => (cfg.params.by === 'branch' ? byBranch : byRegion),
+  })
+  renderApp('/manage/actions')
+  expect(await screen.findByText('Open actions: totals by region')).toBeInTheDocument()
+  const ap = (await screen.findByRole('cell', { name: 'AP & TG' })).closest('tr')!
+  expect(within(ap).getAllByText('3')).toHaveLength(2)  // Visit customer, and the row's total
+  expect(within(screen.getByRole('cell', { name: 'Total' }).closest('tr')!).getByText('5')).toBeInTheDocument()
+  const last = () => calls.filter((c) => c.url === '/branch/actions/totals').at(-1)!.cfg.params
+  expect(last()).toMatchObject({ list: 'lead', by: 'region' })
+  await userEvent.click(screen.getByRole('button', { name: 'DSAs & contact points' }))
+  await waitFor(() => expect(last()).toMatchObject({ list: 'dsa', by: 'region' }))
+  await userEvent.click(screen.getByRole('button', { name: 'By branch' }))
+  expect(await screen.findByRole('cell', { name: 'Vijayawada' })).toBeInTheDocument()
+  expect(last()).toMatchObject({ list: 'dsa', by: 'branch' })
+  expect(screen.getByRole('columnheader', { name: 'Region' })).toBeInTheDocument()
+  expect(screen.getByText('Open actions: totals by branch').closest('div')).toBeInTheDocument()
+  // entries made in a range of dates: the totals and the list both follow
+  fireEvent.change(screen.getByLabelText('Entries from'), { target: { value: '2026-10-01' } })
+  await waitFor(() => expect(last()).toMatchObject({ list: 'dsa', by: 'branch', date_from: '2026-10-01' }))
+  expect(calls.filter((c) => c.url === '/branch/actions').at(-1)!.cfg.params).toMatchObject({ date_from: '2026-10-01' })
 })

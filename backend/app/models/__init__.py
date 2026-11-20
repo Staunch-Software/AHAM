@@ -2,6 +2,7 @@ from app.models.calling import (  # noqa: F401
     BranchAnswer,
     CallAllocation,
     CallAttempt,
+    CallerAbsence,
     CallerDay,
     FollowupTracker,
     LeadCard,

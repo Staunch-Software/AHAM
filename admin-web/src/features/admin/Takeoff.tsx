@@ -29,10 +29,10 @@ export default function Takeoff() {
       </Card>
       <Card title="What the flags mean" className="mt-6">
         <KV items={[
-          ['Customer validated', `Status starts with “Validated” (all four kinds), or the entry logged in and is not LAP. Never for a repeat entry by the same SO within ${days} days.`],
+          ['Customer validated', `Status starts with “Validated” (all four kinds), or the entry is the Sankalp success of its login and the call did not say “Not counted – LAP” (the login’s product does not matter, as the Takeoff master). Never for a repeat entry by the same SO within ${days} days.`],
           ['First validation for this number', 'Validated, and no earlier validated entry exists for the same phone, from any SO. Pay once per customer.'],
           ['Validated on', 'The date of the first call that validated it (or the login date when only the login validates it).'],
-          ['Counts as Sankalp success', 'Logged in, entry on or after Takeoff start, and the earliest entry for that TCS ID (ties: the lower Entry ID). A LAP login is a success but does not validate.'],
+          ['Counts as Sankalp success', 'Logged in, entry on or after Takeoff start, and the earliest entry for that TCS ID (ties: the lower Entry ID). A LAP login validates too, unless the call said “Not counted – LAP”.'],
           ['Credited SO', 'The SO on the entry now: a wrong-SO correction moves the credit; the Entry ID never changes.'],
           ['Payout', 'Not calculated here: Aham / HR still has to confirm the rule.'],
         ]} />

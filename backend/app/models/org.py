@@ -94,6 +94,9 @@ class Branch(Base, Timestamps):
     latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     status: Mapped[str] = mapped_column(String(20), default="active")
+    # caller allocation: the languages spoken in the branch's area, and the caller who usually takes it
+    languages: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    usual_caller_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
 
 
 class User(Base, Timestamps):
@@ -123,6 +126,7 @@ class User(Base, Timestamps):
     password_hash: Mapped[str] = mapped_column(String(255))
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     status: Mapped[str] = mapped_column(String(20), default="active")
+    languages: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")  # a caller's languages
 
     branch_assignments: Mapped[list["UserBranchAssignment"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

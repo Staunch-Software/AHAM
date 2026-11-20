@@ -17,6 +17,7 @@ import BranchLeads from '../features/branch/BranchLeads'
 import CallPerformance from '../features/callcentre/CallPerformance'
 import CallScreen from '../features/callcentre/CallScreen'
 import CcActions from '../features/callcentre/CcActions'
+import Callers from '../features/callcentre/Callers'
 import DailyRun from '../features/callcentre/DailyRun'
 import GreenChannel from '../features/callcentre/GreenChannel'
 import MyCalls from '../features/callcentre/MyCalls'
@@ -41,7 +42,7 @@ export const makeQueryClient = () => new QueryClient({ defaultOptions: { queries
 const PAGES: Record<string, () => ReactElement> = {
   dashboard: () => <Dashboard />, leads: () => <BranchLeads />, actions: () => <Actions />, entries: () => <EntryList />,
   compliance: () => <Compliance />, map: () => <MapPage />, team: () => <Team />, calls: () => <MyCalls />,
-  run: () => <DailyRun />, tracker: () => <TrackerList />, 'green-channel': () => <GreenChannel />,
+  run: () => <DailyRun />, callers: () => <Callers />, tracker: () => <TrackerList />, 'green-channel': () => <GreenChannel />,
   'cc-actions': () => <CcActions />, performance: () => <CallPerformance />, uploads: () => <Uploads />,
   queues: () => <Queues />, takeoff: () => <Takeoff />, users: () => <Users />, organization: () => <Organization />,
   settings: () => <Settings />, audit: () => <Audit />,

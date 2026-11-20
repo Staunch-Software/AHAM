@@ -44,6 +44,7 @@ export const PORTALS: Record<PortalKey, PortalDef> = {
         title: 'Calling', items: [
           { to: 'calls', label: 'My calls', icon: PhoneCall, perms: ['calls.work'] },
           { to: 'run', label: 'Daily run & allocation', icon: Sparkles, perms: ['calls.manage'] },
+          { to: 'callers', label: 'Callers', icon: Users, perms: ['calls.manage'] },
           { to: 'tracker', label: 'Follow-up tracker', icon: ClipboardList, perms: ['calls.manage'] },
           { to: 'green-channel', label: 'Green channel', icon: ShieldCheck, perms: ['calls.manage'] },
           { to: 'cc-actions', label: 'Call-centre actions', icon: Headphones, perms: ['calls.manage'] },

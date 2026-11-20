@@ -1,10 +1,11 @@
 """Call-centre portal (sections 5-8, 13.3): the daily run, callers' lists, recording calls, the lead card, the tracker."""
 import re
 import uuid
+from collections import defaultdict
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,7 @@ from app.models import (
     BranchAnswer,
     CallAllocation,
     CallAttempt,
+    CallerAbsence,
     CallerDay,
     Company,
     FollowupTracker,
@@ -29,9 +31,10 @@ from app.models import (
 from app.services.periods import tz_of
 from app.services.reference import audit
 from app.services.sankalp import call_sheet as CS
+from app.services.sankalp import callers as CL
 from app.services.sankalp import rules as R
 from app.services.sankalp.handoff import review_green_channel, save_tracker
-from app.services.sankalp.ops import company_today, record_attempt, run_selection, save_lead_card
+from app.services.sankalp.ops import absent_callers, company_today, record_attempt, run_selection, save_lead_card
 from app.services.sankalp.schemas import AttemptIn, LeadCardIn, TrackerIn
 from app.services.sankalp.views import calling_detail
 from app.services.settings import load_settings
@@ -354,6 +357,203 @@ async def copy_caller_days(body: CopyIn, user: User = Depends(require_manage), s
     return await put_caller_days(CallerDaysIn(day=body.to_day, assignments=items), user, s)
 
 
+# ---------------------------------------------------------------- callers: languages, absence, the daily limit
+def _languages(values: list[str], allowed: list[str]) -> list[str]:
+    canon = {a.strip().lower(): a for a in allowed}
+    out: list[str] = []
+    for v in values:
+        k = v.strip().lower()
+        if k not in canon:
+            raise HTTPException(422, f"'{v}' is not one of the languages in Settings ({', '.join(allowed)})")
+        if canon[k] not in out:
+            out.append(canon[k])
+    return out
+
+
+async def _day_state(s: AsyncSession, company_id: uuid.UUID, day: date):
+    """Branches and callers as the allocation rules see them on a day (app/services/sankalp/callers.py). A caller's
+    list counts the day's allocations, and, before the run, the retries due to them; a branch carries the new entries
+    still waiting for the selection, counted on the caller who takes it."""
+    cfg = await load_settings(s, company_id)
+    today_caller = dict((await s.execute(select(CallerDay.branch_id, CallerDay.caller_id).where(
+        CallerDay.company_id == company_id, CallerDay.day == day))).all())
+    absent = await absent_callers(s, company_id, day)
+    users = (await s.execute(select(User).where(User.company_id == company_id, User.role == "caller")
+                             .order_by(User.full_name))).scalars().all()
+    listed = dict((await s.execute(select(CallAllocation.caller_id, func.count()).where(
+        CallAllocation.company_id == company_id, CallAllocation.run_date == day, CallAllocation.status.in_(["open", "done"]),
+        CallAllocation.caller_id.is_not(None)).group_by(CallAllocation.caller_id))).all())
+    on_a_list = select(CallAllocation.entry_id).where(CallAllocation.company_id == company_id, CallAllocation.run_date == day)
+    not_closed = or_(SankalpEntry.lead_outcome.is_(None), SankalpEntry.lead_outcome.notin_(R.CLOSED_OUTCOMES))
+    retries = dict((await s.execute(select(SankalpEntry.first_caller_id, func.count()).where(
+        SankalpEntry.company_id == company_id, SankalpEntry.status == R.IN_RETRY, not_closed,
+        or_(SankalpEntry.callback_date.is_(None), SankalpEntry.callback_date <= day),
+        or_(SankalpEntry.last_called_on.is_(None), SankalpEntry.last_called_on < day),
+        SankalpEntry.id.notin_(on_a_list)).group_by(SankalpEntry.first_caller_id))).all())
+    before = SankalpEntry.entry_date <= day if cfg.same_day_calling else SankalpEntry.entry_date < day
+    waiting = dict((await s.execute(select(SankalpEntry.branch_id, func.count()).where(
+        SankalpEntry.company_id == company_id, SankalpEntry.selection_status.is_(None),
+        SankalpEntry.call_group.in_(["lead", "dsa_cp"]), SankalpEntry.entry_date >= cfg.first_call_date, before)
+        .group_by(SankalpEntry.branch_id))).all())
+    fresh: dict = defaultdict(dict)
+    for b, c, n in (await s.execute(
+            select(SankalpEntry.branch_id, CallAllocation.caller_id, func.count())
+            .join(SankalpEntry, SankalpEntry.id == CallAllocation.entry_id)
+            .where(CallAllocation.company_id == company_id, CallAllocation.status == "open", CallAllocation.run_date == day,
+                   CallAllocation.kind == "fresh", SankalpEntry.last_called_on.is_(None))
+            .group_by(SankalpEntry.branch_id, CallAllocation.caller_id))).all():
+        fresh[b][c] = n
+    callers = [CL.CallerToday(u.id, u.full_name, list(u.languages or []), u.status == "active", u.id in absent,
+                              listed.get(u.id, 0) + retries.get(u.id, 0)) for u in users]
+    rows = (await s.execute(select(Branch, Region.name).outerjoin(Region, Region.id == Branch.region_id).where(
+        Branch.company_id == company_id, Branch.status == "active").order_by(Region.name, Branch.name))).all()
+    branches = [CL.BranchToday(b.id, b.name, rn, list(b.languages or []), b.usual_caller_id, today_caller.get(b.id),
+                               waiting.get(b.id, 0), fresh.get(b.id, {})) for b, rn in rows]
+    return branches, callers, users, cfg
+
+
+def _who(c: CL.CallerToday | None) -> dict | None:
+    return {"caller_id": str(c.id), "caller": c.name} if c else None
+
+
+@router.get("/calls/callers")
+async def list_callers(day: date | None = None, user: User = Depends(require_manage), s: AsyncSession = Depends(get_session)):
+    """The Callers page: every caller with their languages, usual branches, absence and today's list against the
+    limit; and every branch with its languages and usual caller."""
+    day = day or await company_today(s, user.company_id)
+    branches, callers, users, cfg = await _day_state(s, user.company_id, day)
+    load = CL.loads(branches, callers)
+    made = dict((await s.execute(select(CallAttempt.caller_id, func.count()).where(
+        CallAttempt.company_id == user.company_id, CallAttempt.call_date == day).group_by(CallAttempt.caller_id))).all())
+    code = {u.id: u.employee_code for u in users}
+    names = {c.id: c.name for c in callers}
+    return {
+        "day": day, "limit": cfg.caller_daily_limit, "languages": cfg.call_languages,
+        "callers": [{"id": str(c.id), "name": c.name, "employee_code": code[c.id], "active": c.active, "absent": c.absent,
+                     "languages": c.languages, "usual_branches": [b.name for b in branches if b.usual == c.id],
+                     "today_branches": [b.name for b in branches if CL.holder(b) == c.id],
+                     "load": load[c.id], "room": cfg.caller_daily_limit - load[c.id], "calls_made": made.get(c.id, 0)}
+                    for c in callers],
+        "branches": [{"branch_id": str(b.id), "branch": b.name, "region": b.region, "languages": b.languages,
+                      "usual_caller_id": str(b.usual) if b.usual else None, "usual_caller": names.get(b.usual)}
+                     for b in branches],
+    }
+
+
+@router.get("/calls/day-plan")
+async def day_plan(day: date | None = None, user: User = Depends(require_manage), s: AsyncSession = Depends(get_session)):
+    """The Daily run page's flags and suggestions: per branch who takes it and what is wrong (no caller, absent, does
+    not speak the language, over the limit) with a suggested caller; per caller the list against the limit; and the
+    moves that bring a caller over the limit back under it. Nothing changes until the Master owner applies one."""
+    day = day or await company_today(s, user.company_id)
+    branches, callers, _, cfg = await _day_state(s, user.company_id, day)
+    limit = cfg.caller_daily_limit
+    plan = CL.day_plan(branches, callers, limit)
+    load = plan["load"]
+    return {
+        "day": day, "limit": limit,
+        "branches": [{"branch_id": str(r["branch"].id), "branch": r["branch"].name, "region": r["branch"].region,
+                      "languages": r["branch"].languages, "waiting": r["branch"].waiting,
+                      "new_on_lists": sum(r["branch"].fresh_open.values()), **(_who(r["caller"]) or {"caller_id": None, "caller": None}),
+                      "flags": r["flags"],
+                      "suggestion": {**_who(r["suggestion"]), "room": limit - load.get(r["suggestion"].id, 0)} if r["suggestion"] else None}
+                     for r in plan["branches"]],
+        "callers": [{"id": str(c.id), "name": c.name, "active": c.active, "absent": c.absent, "languages": c.languages,
+                     "load": load[c.id], "room": limit - load[c.id], "over": max(0, load[c.id] - limit)} for c in callers],
+        "moves": [{"kind": m["kind"], "from_id": str(m["from"].id), "from": m["from"].name, "to_id": str(m["to"].id),
+                   "to": m["to"].name, "branch_id": str(m["branch"].id), "branch": m["branch"].name, "count": m["count"],
+                   "languages": m["branch"].languages} for m in plan["moves"]],
+    }
+
+
+class CallerIn(BaseModel):
+    languages: list[str] = Field(max_length=20)
+
+
+@router.patch("/calls/callers/{caller_id}")
+async def set_caller(caller_id: uuid.UUID, body: CallerIn, user: User = Depends(require_manage),
+                     s: AsyncSession = Depends(get_session)):
+    c = await s.get(User, caller_id)
+    if not c or c.company_id != user.company_id or c.role != "caller":
+        raise HTTPException(404, "Caller not found")
+    before = list(c.languages or [])
+    c.languages = _languages(body.languages, (await load_settings(s, user.company_id)).call_languages)
+    audit(s, user, "caller.languages", "user", c.id, details={"languages": [before, c.languages]})
+    await s.commit()
+    return {"id": str(c.id), "languages": c.languages}
+
+
+class AbsenceIn(BaseModel):
+    day: date
+    absent: bool
+
+
+@router.put("/calls/callers/{caller_id}/absence")
+async def set_absence(caller_id: uuid.UUID, body: AbsenceIn, user: User = Depends(require_manage),
+                      s: AsyncSession = Depends(get_session)):
+    """The Master owner marks a caller absent (or present again) for a day. An absent caller gets no work from the run
+    that day, and their branches are flagged with a suggested caller."""
+    c = await s.get(User, caller_id)
+    if not c or c.company_id != user.company_id or c.role != "caller":
+        raise HTTPException(404, "Caller not found")
+    if body.absent:
+        await s.execute(pg_insert(CallerAbsence).values(id=uuid.uuid4(), company_id=user.company_id, caller_id=c.id,
+                                                        day=body.day, marked_by=user.id).on_conflict_do_nothing(
+            index_elements=["caller_id", "day"]))
+    else:
+        await s.execute(CallerAbsence.__table__.delete().where(and_(CallerAbsence.caller_id == c.id,
+                                                                    CallerAbsence.day == body.day)))
+    audit(s, user, "caller.absent" if body.absent else "caller.present", "user", c.id, details={"day": body.day.isoformat()})
+    await s.commit()
+    return {"id": str(c.id), "day": body.day, "absent": body.absent}
+
+
+class BranchCallingIn(BaseModel):
+    languages: list[str] | None = Field(None, max_length=20)
+    usual_caller_id: uuid.UUID | None = None
+
+
+@router.put("/calls/branches/{branch_id}")
+async def set_branch_calling(branch_id: uuid.UUID, body: BranchCallingIn, user: User = Depends(require_manage),
+                             s: AsyncSession = Depends(get_session)):
+    """A branch's languages and its usual caller (only the fields sent change; usual_caller_id null clears it)."""
+    b = await s.get(Branch, branch_id)
+    if not b or b.company_id != user.company_id:
+        raise HTTPException(404, "Branch not found")
+    changes: dict = {}
+    if "languages" in body.model_fields_set and body.languages is not None:
+        langs = _languages(body.languages, (await load_settings(s, user.company_id)).call_languages)
+        changes["languages"] = [list(b.languages or []), langs]
+        b.languages = langs
+    if "usual_caller_id" in body.model_fields_set:
+        if body.usual_caller_id:
+            c = await s.get(User, body.usual_caller_id)
+            if not c or c.company_id != user.company_id or c.role != "caller":
+                raise HTTPException(422, "Pick a caller")
+        changes["usual_caller_id"] = [str(b.usual_caller_id) if b.usual_caller_id else None,
+                                      str(body.usual_caller_id) if body.usual_caller_id else None]
+        b.usual_caller_id = body.usual_caller_id
+    audit(s, user, "branch.calling", "branch", b.id, details=changes or None)
+    await s.commit()
+    return {"branch_id": str(b.id), "languages": b.languages, "usual_caller_id": str(b.usual_caller_id) if b.usual_caller_id else None}
+
+
+class DayIn(BaseModel):
+    day: date
+
+
+@router.post("/calls/caller-days/auto")
+async def auto_caller_days(body: DayIn, user: User = Depends(require_manage), s: AsyncSession = Depends(get_session)):
+    """Today's caller for every branch by the rules: its usual caller when present and speaking the language,
+    otherwise the present caller who speaks it with the most room. A branch nobody can take keeps what it had."""
+    branches, callers, _, cfg = await _day_state(s, user.company_id, body.day)
+    pick = CL.auto_assign(branches, callers, cfg.caller_daily_limit)
+    items = [CallerDayItem(branch_id=b, caller_id=c) for b, c in pick.items() if c]
+    res = await put_caller_days(CallerDaysIn(day=body.day, assignments=items), user, s)
+    names = {b.id: b.name for b in branches}
+    return {**res, "auto": {"assigned": len(items), "no_caller": sorted(names[b] for b, c in pick.items() if not c)}}
+
+
 @router.get("/calls/allocations")
 async def allocations(day: date | None = None, unassigned: bool = False, user: User = Depends(require_manage),
                       s: AsyncSession = Depends(get_session)):
@@ -410,6 +610,9 @@ async def assign(allocation_id: uuid.UUID, body: AssignIn, user: User = Depends(
 class MoveIn(BaseModel):
     from_caller_id: uuid.UUID
     to_caller_id: uuid.UUID
+    # with both: only this many of the branch's new entries not called yet (a caller over the daily limit)
+    branch_id: uuid.UUID | None = None
+    count: int | None = Field(None, ge=1, le=1000)
 
 
 @router.post("/calls/allocations/move")
@@ -421,6 +624,18 @@ async def move_list(body: MoveIn, user: User = Depends(require_manage), s: Async
         raise HTTPException(422, "Pick an active caller to take the list")
     if body.to_caller_id == body.from_caller_id:
         raise HTTPException(422, "Pick another caller")
+    if body.branch_id and body.count:
+        # the branch's new entries still waiting for their first call, oldest first; retries keep their first caller
+        ids = (await s.execute(select(CallAllocation.id).join(SankalpEntry, SankalpEntry.id == CallAllocation.entry_id).where(
+            CallAllocation.company_id == user.company_id, CallAllocation.caller_id == body.from_caller_id,
+            CallAllocation.status == "open", CallAllocation.kind == "fresh", SankalpEntry.branch_id == body.branch_id,
+            SankalpEntry.last_called_on.is_(None)).order_by(SankalpEntry.submitted_at_device).limit(body.count))).scalars().all()
+        if ids:
+            await s.execute(CallAllocation.__table__.update().where(CallAllocation.id.in_(ids)).values(caller_id=body.to_caller_id))
+        audit(s, user, "allocation.move", "user", body.from_caller_id,
+              details={"to": str(body.to_caller_id), "branch": str(body.branch_id), "moved": len(ids)})
+        await s.commit()
+        return {"moved": len(ids)}
     res = await s.execute(CallAllocation.__table__.update().where(and_(
         CallAllocation.company_id == user.company_id, CallAllocation.caller_id == body.from_caller_id,
         CallAllocation.status == "open")).values(caller_id=body.to_caller_id))

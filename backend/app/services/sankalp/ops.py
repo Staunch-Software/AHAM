@@ -13,6 +13,7 @@ from app.models import (
     BranchAnswer,
     CallAllocation,
     CallAttempt,
+    CallerAbsence,
     CallerDay,
     Company,
     EntryEvent,
@@ -147,7 +148,8 @@ async def recompute_phone_group(s: AsyncSession, company_id: uuid.UUID, phone: s
 
 async def recompute_tcs_group(s: AsyncSession, company_id: uuid.UUID, tcs_id: str, cfg: SankalpSettings) -> set[str]:
     """11.3: one Sankalp success per TCS ID: the earliest entry, if it logged in on or after Takeoff start.
-    10, as the Takeoff master: a login validates an entry only when it is that success (and not LAP, not a repeat);
+    10, as the Takeoff master: a login validates an entry only when it is that success (not when the call said
+    "Not counted – LAP", whatever the login's product; never a repeat);
     an entry with a Validated call status stays validated whatever its login. Returns the phones touched."""
     rows = (await s.execute(select(SankalpEntry).where(SankalpEntry.company_id == company_id,
                                                        SankalpEntry.tcs_id == tcs_id))).scalars().all()
@@ -157,8 +159,7 @@ async def recompute_tcs_group(s: AsyncSession, company_id: uuid.UUID, tcs_id: st
         r.sankalp_success = str(r.id) == winner
         if R.is_validated(r.status) or r.lead_outcome != R.LOGGED_IN:
             continue
-        lg = await best_login(s, company_id, r.phone, r.entry_date, cfg.duplicate_tcs_rule) if r.login_source == "register" else None
-        lap = r.status == R.NOT_COUNTED_LAP or bool(lg and lg.product and "LAP" in lg.product.upper())
+        lap = r.status == R.NOT_COUNTED_LAP
         r.customer_validated = r.sankalp_success and not lap and r.selection_status != R.NC_REPEAT
         if not r.customer_validated:
             r.validated_on = None
@@ -248,10 +249,19 @@ async def run_selection(s: AsyncSession, company_id: uuid.UUID, run_date: date, 
     return {"run_date": run_date, "selection": dict(counts), "allocated": alloc, "unreturned": stale.rowcount}
 
 
+async def absent_callers(s: AsyncSession, company_id: uuid.UUID, day: date) -> set[uuid.UUID]:
+    """Callers the Master owner marked absent for the day: they get no work that day."""
+    return set((await s.execute(select(CallerAbsence.caller_id).where(
+        CallerAbsence.company_id == company_id, CallerAbsence.day == day))).scalars().all())
+
+
 async def caller_of_day(s: AsyncSession, company_id: uuid.UUID, day: date) -> dict[uuid.UUID, uuid.UUID]:
+    """Each branch's caller of the day, leaving out a caller marked absent (the branch then has no caller: its new
+    entries wait under "Work with no caller", and the Daily run page flags it with a suggested caller)."""
     rows = (await s.execute(select(CallerDay.branch_id, CallerDay.caller_id).where(
         CallerDay.company_id == company_id, CallerDay.day == day))).all()
-    return dict(rows)
+    absent = await absent_callers(s, company_id, day)
+    return {b: c for b, c in rows if c not in absent}
 
 
 async def put_on_list_now(s: AsyncSession, e: SankalpEntry, today: date, kind: str = "priority") -> None:
@@ -263,7 +273,7 @@ async def put_on_list_now(s: AsyncSession, e: SankalpEntry, today: date, kind: s
         return  # already on a list
     caller = e.first_caller_id
     u = await s.get(User, caller) if caller else None
-    if not u or u.role != "caller" or u.status != "active":
+    if not u or u.role != "caller" or u.status != "active" or u.id in await absent_callers(s, e.company_id, today):
         caller = (await caller_of_day(s, e.company_id, today)).get(e.branch_id)
     s.add(CallAllocation(company_id=e.company_id, entry_id=e.id, caller_id=caller, run_date=today, kind=kind))
 
@@ -273,8 +283,10 @@ async def allocate(s: AsyncSession, company_id: uuid.UUID, run_date: date) -> di
     handled the entry; follow-ups to the tracker's caller, else the caller who created the lead ID, else the first
     caller (the Takeoff master). Entries already on a list today are left alone."""
     branch_caller = await caller_of_day(s, company_id, run_date)
+    # a caller marked absent today is treated like one who has left: their retries go to the branch's caller of the day
     active_callers = set((await s.execute(select(User.id).where(User.company_id == company_id, User.role == "caller",
                                                                 User.status == "active"))).scalars().all())
+    active_callers -= await absent_callers(s, company_id, run_date)
     already = set((await s.execute(select(CallAllocation.entry_id).where(
         CallAllocation.company_id == company_id, CallAllocation.status == "open"))).scalars().all())
     trackers = dict((await s.execute(select(FollowupTracker.entry_id, FollowupTracker.caller_id).where(

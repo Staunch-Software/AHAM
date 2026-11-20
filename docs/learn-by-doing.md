@@ -57,6 +57,18 @@ switched on in Settings).
 - **PRIORITY** entries come first and go on the list **at once**: a branch says the customer is not answering them
   (code 3), or the Master owner reopens the entry for calling.
 - Work not recorded by the next run is offered again.
+- **Languages, absence and the daily limit** (Aham, Nov 2026; beyond the Excel). On the **Callers** page the Master
+  owner sets the languages each caller speaks, each branch's languages (pre-filled: AP & TG Telugu, Karnataka
+  Kannada, Chennai and RoTN Tamil) and its **usual caller**, and marks a caller **absent** for a day.
+  - **Auto-assign** (Daily run & allocation) gives each branch its usual caller; for an absent one, the present
+    caller who speaks the language with the most room.
+  - An absent caller gets no work from the run: their branches' new entries wait under "Work with no caller", and
+    their retries go to the branch's caller of the day. Each branch is flagged ("Jaya is absent today – change the
+    caller") with a one-click **Use …**.
+  - The **daily limit** (Settings, default 100) counts a caller's whole list: new entries, retries, PRIORITY and
+    follow-ups. A caller over it is flagged, with the caller who speaks the language and has room: **Move N** of a
+    branch's new entries not called yet (after the run), or **Give the branch** for the day (before it). Nothing
+    moves by itself; retries keep their first caller.
 
 ### 4. The call (section 7)
 - **Lead group:** 2 tries a day are planned (morning and afternoon); up to 3 can be recorded; after **9**
@@ -115,6 +127,14 @@ different person → Validated – different person; SO did not visit → Valida
 | Follow-up tracker, Owner = Branch | the tracker's action type (e.g. Confirmation of login required) | SO / branch | until the tracker changes |
 | Green-channel reject sent back | Log in under green channel | SO / branch | until login or rejection |
 
+**Open actions** (Management portal) starts with the Takeoff master's **Totals by region**: open actions counted per
+action. Pick the list (**Leads & prospects**, or **DSAs & contact points**: a DSA/CP follow-up, and a correct-number or
+branch follow-up on a DSA/CP entry) and **By region** or **By branch** (with a region filter); export it like any
+table. A lead counts where it is worked (the handling branch, else the SO's branch), and the totals always add up to
+the list below them. The Expired view totals the expired actions the same way. "Pre-Takeoff follow-up" (entries from
+before 22 Sep) is not built. Sankalp lead conversion (Dashboard) is **not** worked out from these totals: it counts
+validated leads since Takeoff start and how many logged in, were rejected or are still open, as the Excel does.
+
 **Branch answer (12.4):** the BM answers each validated lead with **one code and one date**. A date more than 14 days
 away sends the lead to the call centre's **Follow-up** on that date; once the call centre has called, the lead is
 the branch's again. Code 3 = customer not answering the branch → PRIORITY call at once. R1–R6 = rejected; but for a
@@ -128,7 +148,8 @@ the branch's again. Code 3 = customer not answering the branch → PRIORITY call
 - **Sankalp success:** logged in, entry on or after Takeoff start, and the **earliest** entry for that TCS ID.
   One success per loan.
 - **Customer validated** (for the incentive): a Validated status, or the entry that is the Sankalp success for its
-  TCS ID (logged in, not LAP); never for a repeat entry by the same SO. **First validation** goes to the earliest validated entry for that number: a customer is paid once.
+  TCS ID (logged in), unless the call said "Not counted – LAP" (a LAP product on the login still validates, as the
+  Excel); never for a repeat entry by the same SO. **First validation** goes to the earliest validated entry for that number: a customer is paid once.
 
 ### 9. Corrections (section 13)
 - **Wrong number:** the BM (or RTM) types the right number within 15 days; the entry is called again with a fresh 9

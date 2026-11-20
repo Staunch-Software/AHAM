@@ -45,6 +45,10 @@ class SankalpSettings(BaseModel):
     present_codes: list[str] = ["P", "P(MS)", "P(R)", "P(MS)(R)"]
     designation_roles: dict[str, str] = DEFAULT_DESIGNATION_ROLES
     clock_skew_minutes: int = Field(5, ge=1, le=1440)  # device time this far ahead of the server is flagged
+    # caller allocation: the most entries on one caller's list in a day (new, retries, PRIORITY and follow-ups), and
+    # the languages a branch or a caller can be given
+    caller_daily_limit: int = Field(100, ge=1, le=1000)
+    call_languages: list[str] = ["Telugu", "Tamil", "Kannada", "Malayalam", "Hindi", "English"]
     # Daily selection run: "HH:MM" in the company time zone, or None to run it only from the call-centre portal.
     auto_selection_time: str | None = Field(None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     # ---- [Aham to decide] (defaults = today's behaviour) ----

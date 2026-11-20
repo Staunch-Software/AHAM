@@ -67,7 +67,7 @@ export interface EntryRow {
   sankalp_success: boolean
   photo_count: number
   /** app: made on the phone; import: a bulk upload by HR or the admin */
-  source?: 'app' | 'import'
+  source?: 'app' | 'import' | 'takeoff'  // takeoff: loaded from the Takeoff master workbook
   has_location: boolean
   place_name: string | null
 }

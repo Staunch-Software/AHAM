@@ -405,6 +405,16 @@ Caller menu → **Divya S**, top to bottom:
 - Today's new entries show the yellow **First try overdue** label (tile: about 45). They are from Saturday and Sunday,
   and the target counts calendar days (on the decisions list). On a Monday demo only Saturday's are overdue.
 
+### Step 6: languages, absence and the daily limit (Aham's request, Nov 2026)
+- **Callers** page: each caller's languages (chips), each branch's languages and its usual caller. Show that Raji
+  speaks Telugu and Tamil, so she can take both AP and Chennai branches.
+- Mark a caller **absent** for today, then back on Daily run & allocation: their branches say "… is absent today –
+  change the caller" with **Use …** (the caller who speaks the language with the most room). **Auto-assign** does it
+  for every branch at once. Mark them present again afterwards.
+- The **List / limit** column (limit in Settings, default 100: new entries, retries, PRIORITY and follow-ups). A
+  caller over it gets a yellow box: who speaks the language and has room, and **Move N** of a branch's new entries.
+  Nothing moves until the Master owner clicks; retries keep their first caller.
+
 ### Don't press
 **Move today's list to** (Callers table) is for a caller who is off: their whole open list goes to another caller for
 the day. Show the menu only: it moves the *whole* list, so moving it back merges both lists into one, and section 7
@@ -583,7 +593,7 @@ Master owner → Entries → **Venkata Ramana** → **Outcome and flags**:
 
 | Flag | Rule (section 10) | Venkata Ramana |
 |---|---|---|
-| **Customer validated** | A "Validated…" status (all four kinds), **or** the Sankalp success for its TCS ID (logged in, not LAP); never a repeat by the same SO | Yes |
+| **Customer validated** | A "Validated…" status (all four kinds), **or** the Sankalp success for its TCS ID, unless the call said "Not counted – LAP" (a LAP product on the login still validates, as the Excel); never a repeat by the same SO | Yes |
 | **First validation for this number** | The earliest validated entry for that mobile, from any SO: paid once per customer | Yes |
 | **Validated on** | The date of the latest call that gave a status | Tue 27 Oct |
 | **Counts as Sankalp success** | Section 11.3 (next section) | Yes |

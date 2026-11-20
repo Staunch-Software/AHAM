@@ -2,7 +2,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,6 +26,20 @@ class CallerDay(Base):
     caller_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     set_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     set_at: Mapped[datetime] = _ts(server_default=func.now())
+
+
+class CallerAbsence(Base):
+    """A caller marked absent for a day by the Master owner: not given work that day, and their branches are flagged."""
+
+    __tablename__ = "caller_absences"
+    __table_args__ = (UniqueConstraint("caller_id", "day", name="uq_caller_absences_caller_day"),
+                      Index("ix_caller_absences_company_day", "company_id", "day"))
+    id: Mapped[uuid.UUID] = _id()
+    company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
+    caller_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    day: Mapped[date] = mapped_column(Date)
+    marked_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_at: Mapped[datetime] = _ts(server_default=func.now())
 
 
 class SelectionRun(Base):

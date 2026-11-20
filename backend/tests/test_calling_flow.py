@@ -148,7 +148,12 @@ async def test_entry_to_login_end_to_end(client, tenant_a, clock):
     later = (await client.get("/api/v1/dashboard?period=custom&date_from=2026-11-01&date_to=2026-11-30",
                               headers=await f("bm1"))).json()
     assert later["totals"]["entries"] == 0
-    assert later["conversion"] == {"since": "2026-09-22", "total": {"validated": 1, "logged_in": 1, "rejected": 0, "open": 0},
+    conv = later["conversion"]
+    assert (conv["from"], conv["to"]) == ("2026-09-22", str(clock.day))  # by default: Takeoff start to today
+    # its own range of entry dates: no lead was made by 19 Oct
+    early = (await client.get("/api/v1/dashboard?conv_to=2026-10-19", headers=await f("bm1"))).json()["conversion"]
+    assert (early["from"], early["to"], early["total"]["validated"]) == ("2026-09-22", "2026-10-19", 0)
+    assert {k: conv[k] for k in ("since", "total", "regions")} == {"since": "2026-09-22", "total": {"validated": 1, "logged_in": 1, "rejected": 0, "open": 0},
                                    "regions": [{"region": "Region One", "validated": 1, "logged_in": 1, "rejected": 0,
                                                 "open": 0}]}
     other = (await client.get("/api/v1/dashboard", headers=await f("bm3"))).json()
@@ -387,7 +392,8 @@ async def test_login_register_rules(client, tenant_a, clock):
     assert ea["customer_validated"] and not eb["customer_validated"]
     assert ea["first_validation"] and not eb["first_validation"]
     assert ec["lead_outcome"] == R.LOGIN_BEFORE_ENTRY and not ec["customer_validated"]
-    assert ed["lead_outcome"] == R.LOGGED_IN and ed["sankalp_success"] and not ed["customer_validated"]  # LAP
+    # a LAP product on the login validates too, as the Takeoff master (only a "Not counted – LAP" call does not)
+    assert ed["lead_outcome"] == R.LOGGED_IN and ed["sankalp_success"] and ed["customer_validated"]
 
     # a later row for the same TCS ID wins: TA now belongs to another number
     await upload("TCS ID,Customer contact,Login date\nTA,9700000009,2026-10-21\n")
@@ -500,3 +506,49 @@ async def test_call_sheet_is_each_callers_list_in_the_hand_made_layout(client, t
     sheet = load_workbook(BytesIO(own.content))
     assert sheet.sheetnames == ["Caller2"] and sheet["Caller2"]["A5"].value == "Nothing on this list for the day."
     assert (await client.get("/api/v1/calls/call-sheet.xlsx", headers=await f("so1"))).status_code == 403
+
+
+async def test_action_totals_by_region_or_branch_for_each_list(client, tenant_a, clock):
+    """The Takeoff master's "Totals by region" on its leads and DSA / contact point action sheets, also by branch."""
+    f = Flow(client, tenant_a)
+    lead1 = await f.entry("so1")  # Branch One, Region One
+    dsa1 = await f.entry("so1", hhmm="11:00", phone="9876543211", category="dsa_connector")
+    lead3 = await f.entry("so3", phone="9876543212")  # Branch Three, Region Two
+    dsa3 = await f.entry("so3", hhmm="11:00", phone="9876543213", category="dsa_connector")
+    await f.callers(clock.day, {"b1": "caller1", "b3": "caller1"})
+    await f.run(clock.day)
+    await f.call("caller1", lead1["id"], R.CONNECTED, OK | {"next_step": "SO / branch visit", "next_date": "2026-10-24"})
+    await f.call("caller1", dsa1["id"], R.CONNECTED, {"dsa_rag": "Green", "needs_home_loan": "No"})
+    await f.call("caller1", lead3["id"], R.WRONG_PERSON)
+    await f.call("caller1", dsa3["id"], R.WRONG_PERSON)
+
+    async def totals(who="monitor", **params):
+        r = await client.get("/api/v1/branch/actions/totals", params=params, headers=await f(who))
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    lead = await totals()
+    assert lead["columns"] == [R.ACT_VISIT, R.ACT_COLLECT_DOCS, R.ACT_FOLLOW_UP_LEAD, R.ACT_CONFIRM_LOGIN, R.ACT_GREEN_LOGIN,
+                               R.ACT_SERVICE, R.ACT_CORRECT_NUMBER, R.ACT_BRANCH_FOLLOWUP]
+    assert [(r["label"], r["counts"], r["total"]) for r in lead["rows"]] == [
+        ("Region One", {R.ACT_VISIT: 1}, 1), ("Region Two", {R.ACT_CORRECT_NUMBER: 1}, 1)]
+    assert lead["total"]["total"] == 2 and lead["total"]["counts"][R.ACT_VISIT] == 1
+    # a DSA/CP follow-up, and a wrong number on a DSA/CP entry, are on the DSA / contact point list
+    dsa = await totals(list="dsa")
+    assert dsa["columns"] == [R.ACT_DSA_FOLLOWUP, R.ACT_CORRECT_NUMBER, R.ACT_BRANCH_FOLLOWUP]
+    assert [(r["label"], r["counts"]) for r in dsa["rows"]] == [
+        ("Region One", {R.ACT_DSA_FOLLOWUP: 1}), ("Region Two", {R.ACT_CORRECT_NUMBER: 1})]
+    by_branch = await totals(by="branch")
+    assert [(r["id"], r["label"], r["region"], r["total"]) for r in by_branch["rows"]] == [
+        (str(tenant_a["b1"]), "Branch One", "Region One", 1), (str(tenant_a["b3"]), "Branch Three", "Region Two", 1)]
+    # the two lists together are exactly the list of open actions
+    listed = (await client.get("/api/v1/branch/actions", headers=await f("monitor"))).json()["total"]
+    assert listed == lead["total"]["total"] + dsa["total"]["total"] == 4
+    # a branch manager counts only their branch, and only their region is listed
+    mine = await totals("bm1")
+    assert [(r["label"], r["total"]) for r in mine["rows"]] == [("Region One", 1)]
+    assert (await totals(expired="true"))["total"]["total"] == 0
+    # only entries made in a range of dates (all four were made on 20 Oct), for the totals and the list
+    assert (await totals(date_to="2026-10-19"))["total"]["total"] == 0
+    assert (await totals(date_from="2026-10-20", date_to="2026-10-20"))["total"]["total"] == 2
+    assert (await client.get("/api/v1/branch/actions?date_from=2026-10-21", headers=await f("monitor"))).json()["total"] == 0

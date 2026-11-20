@@ -73,7 +73,7 @@ test('the menu shows only what the role may do', async () => {
   // lead conversion by region, as the Takeoff master: 1 of 4 validated leads logged in
   expect(screen.getByRole('row', { name: /Karnataka 4 1 1 2 25.0%/ })).toBeInTheDocument()
   expect(screen.getByRole('row', { name: /Total 10 4 1 5 40.0%/ })).toBeInTheDocument()  // every entry since Takeoff start
-  expect(screen.getByText(/since Takeoff start \(2026-09-22\)/)).toBeInTheDocument()
+  expect(screen.getByText(/entries made from 2026-09-22 to today/)).toBeInTheDocument()
   unmount()
 
   installApiMock('product_manager', { '/dashboard': DASH })

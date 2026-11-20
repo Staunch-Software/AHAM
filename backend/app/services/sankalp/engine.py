@@ -386,7 +386,9 @@ def derive(st: EntryState, cfg: Settings, today: date) -> Derived:
                   has_open_action=so_open or cc_open, call_group=st.call_group,
                   lost_lead=status == R.RED and bool(validating))
     override = tr.rag_override if tr and tr.rag_override else None
-    lap = status == R.NOT_COUNTED_LAP or bool(login and login.product and "LAP" in login.product.upper())
+    # as the Takeoff master (Lead Status, "Customer validated?"; Aham, 19 Nov 2026): a login validates unless the call
+    # itself said "Not counted – LAP"; the product on the login register does not matter
+    lap = status == R.NOT_COUNTED_LAP
     repeat = st.selection_status == R.NC_REPEAT
     validated = (R.is_validated(status) or (outcome == R.LOGGED_IN and not lap)) and not repeat
     # 10: the date of the latest call that gave a status (the Takeoff master); none for a login without such a call

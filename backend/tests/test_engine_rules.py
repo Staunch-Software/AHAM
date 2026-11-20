@@ -224,7 +224,10 @@ def test_login_outcomes_and_validation():
     before = E.derive(state(base, login=E.Login("T1", D - timedelta(days=1), "Home Loan", "register")), CFG, D)
     assert before.lead_outcome == R.LOGIN_BEFORE_ENTRY and not before.customer_validated and before.rag == "NA"
     lap = E.derive(state(base, login=E.Login("T1", D + timedelta(days=5), "LAP", "register")), CFG, D)
-    assert lap.lead_outcome == R.LOGGED_IN and not lap.customer_validated  # LAP login: success, not validation
+    assert lap.lead_outcome == R.LOGGED_IN and lap.customer_validated  # the login's product does not matter (Excel)
+    lap_call = att(answers=OK | {"loan_need": "LAP"})  # the call said "Not counted – LAP"
+    lap2 = E.derive(state(lap_call, login=E.Login("T1", D + timedelta(days=5), "Home Loan", "register")), CFG, D)
+    assert lap2.lead_outcome == R.LOGGED_IN and not lap2.customer_validated
     manual = E.derive(state(base, tracker=E.Tracker(None, None, None, "T9", None, False, D)), CFG, D)
     assert manual.lead_outcome == R.LOGGED_IN
     repeat = E.derive(state(sel=R.NC_REPEAT, login=E.Login("T1", D + timedelta(days=5), "Home Loan", "register")), CFG, D)

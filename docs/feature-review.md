@@ -763,7 +763,8 @@ outcome in `engine.lead_outcome`; success in `ops.recompute_tcs_group`. Flow tes
   before the entry date. A login wins over a rejection. A register row with no login date does not count as a login.
 - **11.3 Sankalp success:** Logged in, entry date on or after Takeoff start (setting, 22 Sep 2026), and the earliest
   entry for that TCS ID (ties: lower Entry ID). One success per TCS ID, worked out again whenever the group changes.
-- **LAP:** a LAP login can be a Sankalp success but is not "Customer validated" (separate flags).
+- **LAP:** decided 19 Nov 2026, as the Takeoff master: a login validates whatever its product; only a call that
+  said "Not counted – LAP" keeps it from validating. (The rules document had said a LAP login does not validate.)
 - The entry keeps the TCS ID, login date and how it was found (register or manual).
 
 **Aham**
