@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import uuid
 from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
@@ -73,7 +74,9 @@ async def upload_document(
     doc_id = uuid.uuid4()
     filename = file.filename or f"doc_{doc_id}.jpg"
     clean_filename = "".join(c for c in filename if c.isalnum() or c in ".-_ ")
-    storage_key = f"documents/{user.company_id}/{e.id}/{doc_id}_{clean_filename}"
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    entry_ref = "".join(c for c in (e.entry_code or str(e.id)) if c.isalnum() or c in "-_")
+    storage_key = f"entries/{entry_ref}/{today_str}/{doc_id}_{clean_filename}"
 
     store = get_storage()
     store.put(storage_key, content)
