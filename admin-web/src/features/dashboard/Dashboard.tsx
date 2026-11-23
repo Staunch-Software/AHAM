@@ -36,7 +36,7 @@ export const PERIODS: { value: Period; label: string }[] = [
 const RAG_ORDER = ['GREEN', 'AMBER', 'RED', 'RNR', 'PENDING', 'NA']
 const RAG_BAR: Record<string, string> = { GREEN: 'bg-emerald-500', AMBER: 'bg-amber-400', RED: 'bg-roof-500', RNR: 'bg-violet-400', PENDING: 'bg-sky-400', NA: 'bg-slate-300' }
 
-export function RagBar({ rag }: { rag: Record<string, number> }) {
+export function RagBar({ rag, linkFor }: { rag: Record<string, number>; linkFor?: (rag: string) => string }) {
   const total = Object.values(rag).reduce((a, b) => a + b, 0)
   if (!total) return <p className="text-sm text-slate-500">No entries yet.</p>
   return (
@@ -45,12 +45,19 @@ export function RagBar({ rag }: { rag: Record<string, number> }) {
         {RAG_ORDER.filter((k) => rag[k]).map((k) => <div key={k} className={RAG_BAR[k]} style={{ width: `${(rag[k]! / total) * 100}%` }} />)}
       </div>
       <ul className="mt-3 grid grid-cols-3 gap-2 text-xs sm:grid-cols-6">
-        {RAG_ORDER.map((k) => (
-          <li key={k} className="flex items-center gap-1.5 text-slate-600">
-            <span className={`h-2.5 w-2.5 rounded-full ${RAG_BAR[k]}`} aria-hidden="true" />{RAG_LABEL[k]}
-            <span className="tabular ml-auto font-semibold text-slate-800">{rag[k] ?? 0}</span>
-          </li>
-        ))}
+        {RAG_ORDER.map((k) => {
+          const item = (
+            <span className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 transition">
+              <span className={`h-2.5 w-2.5 rounded-full ${RAG_BAR[k]}`} aria-hidden="true" />{RAG_LABEL[k]}
+              <span className="tabular ml-auto font-semibold text-slate-800">{rag[k] ?? 0}</span>
+            </span>
+          )
+          return (
+            <li key={k}>
+              {linkFor ? <Link to={linkFor(k)} className="hover:underline block">{item}</Link> : item}
+            </li>
+          )
+        })}
       </ul>
     </div>
   )
@@ -87,6 +94,18 @@ export default function Dashboard() {
   })
   const scope = me?.branch_name ?? me?.cluster_name ?? me?.region_name ?? 'All regions'
   const t = data?.totals
+
+  const entriesUrl = (extra: Record<string, string>) => {
+    if (!data) return path('entries')
+    const p = new URLSearchParams({
+      date_from: data.period.from,
+      date_to: data.period.to,
+      date_field: 'count',
+      ...extra,
+    })
+    return path(`entries?${p.toString()}`)
+  }
+
   return (
     <>
       <PageTitle subtitle={<>Entries counted on their count date · <strong className="text-slate-700">{scope}</strong></>}
@@ -99,20 +118,75 @@ export default function Dashboard() {
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Entries" value={t.entries} testId="kpi-entries" icon={<ListChecks size={20} />} hint={`${t.active_sos} Sales Officers`} />
-            <StatCard label="Lead / Prospect" value={t.lead_prospect} icon={<Target size={20} />} tone="gold" hint={`${t.dsa_cp} DSA / CP`} />
-            <StatCard label="Customers validated" value={t.validated} testId="kpi-validated" icon={<BadgeCheck size={20} />} tone="green" />
-            <StatCard label="Logged in" value={t.logged_in} icon={<IdCard size={20} />} tone="blue" hint={`${t.sankalp_success} Sankalp successes`} />
-            <StatCard label="Awaiting first call" value={t.awaiting_call} icon={<Clock size={20} />} hint="Selected, not yet called" />
-            <StatCard label="Open SO / branch actions" value={t.open_so_actions} icon={<UserCheck size={20} />} tone="red"
-              to={can('entries.read') ? <Link to={path('actions')} className="mt-2 inline-block text-xs font-semibold text-brand-700 hover:underline">See actions</Link> : undefined} />
-            <StatCard label="Sankalp success" value={t.sankalp_success} icon={<Award size={20} />} tone="gold" hint="Earliest entry per TCS ID" />
-            <StatCard label="Active Sales Officers" value={t.active_sos} icon={<Users size={20} />} hint={`${data.period.from} to ${data.period.to}`} />
+            <StatCard
+              label="Entries"
+              value={t.entries}
+              testId="kpi-entries"
+              icon={<ListChecks size={20} />}
+              hint={`${t.active_sos} Sales Officers`}
+              linkTo={can('entries.read') ? entriesUrl({}) : undefined}
+            />
+            <StatCard
+              label="Lead / Prospect"
+              value={t.lead_prospect}
+              icon={<Target size={20} />}
+              tone="gold"
+              hint={`${t.dsa_cp} DSA / CP`}
+              linkTo={can('entries.read') ? entriesUrl({ call_group: 'lead' }) : undefined}
+            />
+            <StatCard
+              label="Customers validated"
+              value={t.validated}
+              testId="kpi-validated"
+              icon={<BadgeCheck size={20} />}
+              tone="green"
+              linkTo={can('entries.read') ? entriesUrl({ customer_validated: 'true' }) : undefined}
+            />
+            <StatCard
+              label="Logged in"
+              value={t.logged_in}
+              icon={<IdCard size={20} />}
+              tone="blue"
+              hint={`${t.sankalp_success} Sankalp successes`}
+              linkTo={can('entries.read') ? entriesUrl({ lead_outcome: 'Logged in' }) : undefined}
+            />
+            <StatCard
+              label="Awaiting first call"
+              value={t.awaiting_call}
+              icon={<Clock size={20} />}
+              hint="Selected, not yet called"
+              linkTo={can('entries.read') ? entriesUrl({ status: 'Allocate' }) : undefined}
+            />
+            <StatCard
+              label="Open SO / branch actions"
+              value={t.open_so_actions}
+              icon={<UserCheck size={20} />}
+              tone="red"
+              linkTo={can('entries.read') ? entriesUrl({ has_action: 'true' }) : undefined}
+              hint="Filter entries with open actions"
+            />
+            <StatCard
+              label="Sankalp success"
+              value={t.sankalp_success}
+              icon={<Award size={20} />}
+              tone="gold"
+              hint="Earliest entry per TCS ID"
+              linkTo={can('entries.read') ? entriesUrl({ sankalp_success: 'true' }) : undefined}
+            />
+            <StatCard
+              label="Active Sales Officers"
+              value={t.active_sos}
+              icon={<Users size={20} />}
+              hint={`${data.period.from} to ${data.period.to}`}
+              linkTo={can('team.read') ? path('team') : (can('entries.read') ? entriesUrl({}) : undefined)}
+            />
           </div>
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <Card title="Entries per day" subtitle="By count date (Sundays and holidays count on the next working day)"><Trend trend={data.trend} /></Card>
-            <Card title="RAG" subtitle="Where the entries of this period stand now"><RagBar rag={data.rag} /></Card>
+            <Card title="RAG" subtitle="Where the entries of this period stand now">
+              <RagBar rag={data.rag} linkFor={can('entries.read') ? (k) => entriesUrl({ rag: k }) : undefined} />
+            </Card>
           </div>
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -120,8 +194,16 @@ export default function Dashboard() {
               <ul className="space-y-2.5">
                 {Object.entries(data.by_category).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
                   <li key={k} className="flex items-center gap-3 text-sm">
-                    <span className="w-36 shrink-0 text-slate-600">{k}</span>
-                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-brand-600" style={{ width: `${(v / Math.max(1, t.entries)) * 100}%` }} /></div>
+                    {can('entries.read') ? (
+                      <Link to={entriesUrl({ category: k })} className="w-36 shrink-0 text-slate-600 hover:text-brand-700 hover:underline truncate">
+                        {k}
+                      </Link>
+                    ) : (
+                      <span className="w-36 shrink-0 text-slate-600 truncate">{k}</span>
+                    )}
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-brand-600" style={{ width: `${(v / Math.max(1, t.entries)) * 100}%` }} />
+                    </div>
                     <span className="tabular w-10 text-right font-semibold text-slate-800">{v}</span>
                   </li>
                 ))}
@@ -131,7 +213,19 @@ export default function Dashboard() {
             <Card title="By status" subtitle="Selection result until the first call, then the call status">
               <ul className="max-h-72 space-y-1.5 overflow-y-auto text-sm">
                 {Object.entries(data.by_status).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
-                  <li key={k} className="flex justify-between gap-3 border-b border-slate-100 pb-1.5"><span className="text-slate-600">{k}</span><span className="tabular font-semibold text-slate-800">{v}</span></li>
+                  <li key={k} className="flex justify-between gap-3 border-b border-slate-100 pb-1.5 hover:bg-slate-50 px-1 rounded transition">
+                    {can('entries.read') ? (
+                      <Link to={entriesUrl({ status: k })} className="text-slate-600 hover:text-brand-700 hover:underline flex-1 flex justify-between">
+                        <span>{k}</span>
+                        <span className="tabular font-semibold text-slate-800">{v}</span>
+                      </Link>
+                    ) : (
+                      <>
+                        <span className="text-slate-600">{k}</span>
+                        <span className="tabular font-semibold text-slate-800">{v}</span>
+                      </>
+                    )}
+                  </li>
                 ))}
               </ul>
             </Card>
@@ -175,11 +269,25 @@ export default function Dashboard() {
             {data.branches.length === 0 ? <EmptyState icon={<ListChecks size={20} />} title="No entries in this period." /> : (
               <Table head={['Branch', 'Region', 'Sales Officers', 'Entries', 'Lead / Prospect entries', 'Validated', 'Logged in', 'Green', 'Amber', 'Red']} exportName="Branches" maxHeight="max-h-[min(480px,60vh)]">
                 {data.branches.map((b) => (
-                  <tr key={b.branch_id}>
-                    <Td className="font-medium text-slate-900">{b.branch}</Td><Td>{b.region ?? '—'}</Td><Td className="tabular">{b.sos}</Td>
-                    <Td className="tabular">{b.entries}</Td><Td className="tabular">{b.lead_prospect}</Td><Td className="tabular">{b.validated}</Td>
-                    <Td className="tabular">{b.logged_in}</Td><Td className="tabular text-emerald-700">{b.green}</Td>
-                    <Td className="tabular text-amber-700">{b.amber}</Td><Td className="tabular text-roof-700">{b.red}</Td>
+                  <tr key={b.branch_id} className="hover:bg-slate-50/80 transition">
+                    <Td className="font-medium text-slate-900">
+                      {can('entries.read') ? (
+                        <Link to={entriesUrl({ branch_id: b.branch_id })} className="text-brand-700 hover:underline">
+                          {b.branch}
+                        </Link>
+                      ) : (
+                        b.branch
+                      )}
+                    </Td>
+                    <Td>{b.region ?? '—'}</Td>
+                    <Td className="tabular">{b.sos}</Td>
+                    <Td className="tabular">{b.entries}</Td>
+                    <Td className="tabular">{b.lead_prospect}</Td>
+                    <Td className="tabular">{b.validated}</Td>
+                    <Td className="tabular">{b.logged_in}</Td>
+                    <Td className="tabular text-emerald-700">{b.green}</Td>
+                    <Td className="tabular text-amber-700">{b.amber}</Td>
+                    <Td className="tabular text-roof-700">{b.red}</Td>
                   </tr>
                 ))}
               </Table>

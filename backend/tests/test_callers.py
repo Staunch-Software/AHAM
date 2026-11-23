@@ -97,7 +97,7 @@ async def test_languages_absence_auto_assign_and_the_daily_limit(client, tenant_
         assert r.status_code == 200, r.text
     page = (await client.get("/api/v1/calls/callers", headers=m)).json()
     by_name = {c["name"]: c for c in page["callers"]}
-    assert page["limit"] == 100 and by_name["Caller1"]["usual_branches"] == ["Branch One", "Branch Two"]
+    assert page["limit"] == 250 and by_name["Caller1"]["usual_branches"] == ["Branch One", "Branch Two"]
     assert (await client.get("/api/v1/calls/callers", headers=await f("caller1"))).status_code == 403
 
     # a lead of 20 Oct, tried by Caller1 on the 21st without an answer: a retry that is Caller1's

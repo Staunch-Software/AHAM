@@ -2,8 +2,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Button, Dialog, ErrorBox, Field, Input, RAG_LABEL, Select, Textarea, Toggle } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
+import { useAuth } from '../../services/auth'
 import { useCallers, useMeta, useSalesOfficers } from '../../services/meta'
 import type { EntryDetail, Tracker } from '../../types'
+import { DocumentAttachModal } from '../documents/DocumentAttachModal'
 
 const useDone = (id: string, onClose: () => void) => {
   const qc = useQueryClient()
@@ -49,8 +51,11 @@ export function CorrectSoDialog({ entry, onClose }: { entry: EntryDetail; onClos
 /** 13.3: the master owner's manual follow-up row (one per entry). */
 export function TrackerDialog({ entry, onClose }: { entry: EntryDetail; onClose: () => void }) {
   const done = useDone(entry.id, onClose)
+  const { me, can } = useAuth()
+  const canManageDocs = can('documents.manage') || ['branch_manager', 'sales_officer'].includes(me?.role ?? '')
   const { data: meta } = useMeta()
   const { data: callers } = useCallers()
+  const [attachOpen, setAttachOpen] = useState(false)
   const t: Partial<Tracker> = entry.tracker ?? {}
   const [v, setV] = useState({
     owner: t.owner ?? '', action_type: t.action_type ?? '', caller_id: t.caller_id ?? '', followup_date: t.followup_date ?? '',
@@ -87,7 +92,24 @@ export function TrackerDialog({ entry, onClose }: { entry: EntryDetail; onClose:
       {v.outcome === 'Return to branch – green channel' && <p className="mt-3 rounded-lg bg-gold-50 px-3 py-2 text-xs text-slate-700">Returns the branch's green-channel R2/R3 rejection, if one is waiting (the same as on the Green channel page): the lead goes back to the branch to log in.</p>}
       <div className="mt-4"><Toggle label="Immediate call-back (shown first, as PRIORITY)" checked={v.immediate_callback} onChange={(c) => setV({ ...v, immediate_callback: c })} /></div>
       <div className="mt-4"><Field label="Notes"><Textarea rows={3} value={v.notes} onChange={set('notes')} /></Field></div>
-      <div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={m.isPending || needTcs || needReason} onClick={() => m.mutate()}>Save</Button></div>
+      <div className="mt-5 flex items-center justify-between">
+        {canManageDocs ? (
+          <Button variant="secondary" small onClick={() => setAttachOpen(true)}>
+            Attach / Scan Document
+          </Button>
+        ) : <div />}
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button disabled={m.isPending || needTcs || needReason} onClick={() => m.mutate()}>Save</Button>
+        </div>
+      </div>
+      {attachOpen && (
+        <DocumentAttachModal
+          entryId={entry.id}
+          entryCode={entry.entry_code}
+          onClose={() => setAttachOpen(false)}
+        />
+      )}
     </Dialog>
   )
 }

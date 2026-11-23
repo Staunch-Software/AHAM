@@ -10,7 +10,7 @@ from sqlalchemy import text
 import asyncio
 from contextlib import asynccontextmanager
 
-from app.api.v1 import auth, branch, calling, entries, events, exports, imports, irr, org, reference, reports, uploads
+from app.api.v1 import auth, branch, calling, documents, entries, events, exports, imports, irr, org, reference, reports, uploads
 from app.core.config import get_settings
 from app.core.db import engine
 from app.core.logging import configure_logging
@@ -104,5 +104,5 @@ async def ready():
 
 
 for r in (auth.router, org.router, reference.router, imports.router, uploads.router, entries.router, calling.router,
-          branch.router, reports.router, events.router, irr.router, exports.router):
+          branch.router, reports.router, events.router, irr.router, exports.router, documents.router):
     app.include_router(r, prefix="/api/v1")

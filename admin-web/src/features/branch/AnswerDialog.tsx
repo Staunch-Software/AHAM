@@ -2,15 +2,20 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Button, Dialog, ErrorBox, Field, Input, Select, Textarea } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
+import { useAuth } from '../../services/auth'
 import { useMeta } from '../../services/meta'
+import { DocumentAttachModal } from '../documents/DocumentAttachModal'
 
 /** 12.4: one code and one date per lead. A date more than 14 days out sends the lead to the call centre. */
 export function AnswerDialog({ entryId, entryCode, onClose }: { entryId: string; entryCode: string; onClose: () => void }) {
   const qc = useQueryClient()
+  const { me, can } = useAuth()
+  const canManageDocs = can('documents.manage') || ['branch_manager', 'sales_officer'].includes(me?.role ?? '')
   const { data: meta } = useMeta()
   const [code, setCode] = useState('')
   const [date, setDate] = useState('')
   const [note, setNote] = useState('')
+  const [attachOpen, setAttachOpen] = useState(false)
   const chosen = meta?.branch_codes.find((c) => c.code === code)
   const m = useMutation({
     mutationFn: () => api.post(`/branch/leads/${entryId}/answer`, { code, answer_date: chosen?.date_label ? date : null, note: note.trim() || null }),
@@ -39,6 +44,14 @@ export function AnswerDialog({ entryId, entryCode, onClose }: { entryId: string;
         )}
         {code === '1' && <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800">The lead closes only when the login register shows the login.</p>}
         {(code === 'R2' || code === 'R3') && <p className="rounded-lg bg-gold-50 px-3 py-2 text-xs text-slate-700">For green-channel loans (small construction or purchase) head office checks this reject before it is accepted.</p>}
+        {code.startsWith('A') && canManageDocs && (
+          <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800 border border-emerald-200">
+            <span>Customer documents or certificates ready to attach?</span>
+            <Button variant="secondary" small onClick={() => setAttachOpen(true)}>
+              Attach / Scan Document
+            </Button>
+          </div>
+        )}
         {chosen?.date_label && meta && <p className="text-xs text-slate-500">A date within {meta.limits.branch_date_threshold_days} days keeps the lead with the branch; a later date sends it to the call centre for follow-up on that date.</p>}
         <Field label="Note (optional)"><Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
       </div>
@@ -46,6 +59,13 @@ export function AnswerDialog({ entryId, entryCode, onClose }: { entryId: string;
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
         <Button disabled={!code || (!!chosen?.date_label && !date) || m.isPending} onClick={() => m.mutate()}>Save answer</Button>
       </div>
+      {attachOpen && (
+        <DocumentAttachModal
+          entryId={entryId}
+          entryCode={entryCode}
+          onClose={() => setAttachOpen(false)}
+        />
+      )}
     </Dialog>
   )
 }

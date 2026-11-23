@@ -4,10 +4,22 @@ let accessToken: string | null = null
 let portal = 'admin'
 const refreshKey = () => `sankalp_refresh_${portal}`
 
+export function getActivePortal(): string | null {
+  try {
+    const saved = localStorage.getItem('sankalp_active_portal')
+    if (saved && localStorage.getItem(`sankalp_refresh_${saved}`)) return saved
+    for (const p of ['manage', 'callcentre', 'admin']) {
+      if (localStorage.getItem(`sankalp_refresh_${p}`)) return p
+    }
+  } catch {}
+  return null
+}
+
 /** Each portal keeps its own session (refresh token), so a browser can be signed in to two portals in two tabs. */
 export function setPortal(p: string) {
   if (p !== portal) accessToken = null
   portal = p
+  try { localStorage.setItem('sankalp_active_portal', p) } catch {}
 }
 
 // Access token lives in memory only; the refresh token is kept in localStorage so a reload keeps the session.
@@ -16,11 +28,17 @@ export const tokens = {
   get refresh() { try { return localStorage.getItem(refreshKey()) } catch { return null } },
   set(access: string, refresh: string) {
     accessToken = access
-    try { localStorage.setItem(refreshKey(), refresh) } catch { /* storage unavailable */ }
+    try {
+      localStorage.setItem(refreshKey(), refresh)
+      localStorage.setItem('sankalp_active_portal', portal)
+    } catch { /* storage unavailable */ }
   },
   clear() {
     accessToken = null
-    try { localStorage.removeItem(refreshKey()) } catch { /* ignore */ }
+    try {
+      localStorage.removeItem(refreshKey())
+      localStorage.removeItem('sankalp_active_portal')
+    } catch { /* ignore */ }
   },
 }
 

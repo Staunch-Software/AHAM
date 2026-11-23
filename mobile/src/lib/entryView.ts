@@ -2,8 +2,82 @@ import { C } from './theme'
 
 /** What the server says about an entry (status, RAG, next action). */
 export interface ServerRow {
-  id: string; entry_code: string; person_name: string; phone: string; category: string; submitted_at_device: string
-  status: string | null; selection_status: string | null; current_status?: string; rag: string; so_action: string | null; so_action_date: string | null; lead_outcome: string | null
+  id: string
+  entry_code: string
+  person_name: string
+  phone: string
+  category: string
+  submitted_at_device: string
+  status: string | null
+  selection_status: string | null
+  current_status?: string
+  rag: string
+  so_action: string | null
+  so_action_date: string | null
+  lead_outcome: string | null
+  customer_validated?: boolean
+  sankalp_success?: boolean
+  tcs_id?: string | null
+}
+
+export interface ServerAttempt {
+  id: string
+  call_date: string
+  slot: string
+  outcome: string
+  cycle: number
+  next_date: string | null
+  answers: Record<string, any> | null
+  row_status: string | null
+  caller?: string | null
+  at?: string
+}
+
+export interface ServerPhoto {
+  photo_id: string
+  url: string
+  thumb_url: string
+  photo_captured_at_device: string | null
+  place_name: string | null
+  latitude: number | null
+  longitude: number | null
+  accuracy_m: number | null
+}
+
+export interface ServerLeadCard {
+  lead_id: string | null
+  loan_requirement: number | null
+  handling_branch_id?: string | null
+  city?: string | null
+  individual_monthly_income?: number | null
+  cibil_score?: number | null
+}
+
+export interface ServerDetail extends ServerRow {
+  description: string
+  keka_photo_time: string | null
+  phone_raw?: string
+  cp_subtype_label: string | null
+  place_name: string | null
+  branch_name: string | null
+  region_name: string | null
+  so_name: string | null
+  so_employee_code: string | null
+  location?: {
+    latitude: number | null
+    longitude: number | null
+    accuracy_m: number | null
+    status: string
+    place_name: string | null
+  }
+  attempts: ServerAttempt[]
+  lead_card: ServerLeadCard | null
+  photos: ServerPhoto[]
+  cc_action: string | null
+  cc_action_date: string | null
+  entry_date?: string
+  count_date?: string
+  history?: { kind: string; at: string; by: string | null; detail: any }[]
 }
 
 type CloudIcon = 'cloud-clock-outline' | 'cloud-upload-outline' | 'cloud-check-outline' | 'cloud-alert'

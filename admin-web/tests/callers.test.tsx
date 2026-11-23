@@ -31,13 +31,17 @@ test('the Callers page sets languages and marks a caller absent for the day', as
   expect(within(row).getByText('120 / 100 (over by 20)')).toBeInTheDocument()
   expect(screen.getByText('Set languages: not used by auto-assign')).toBeInTheDocument()  // Divya has none
   // Jaya also speaks Tamil
-  await userEvent.click(within(within(row).getByRole('group', { name: 'Languages of Jaya' })).getByRole('button', { name: 'Tamil' }))
+  const jayaLangs = within(row).getByRole('group', { name: 'Languages of Jaya' })
+  await userEvent.click(within(jayaLangs).getByRole('button'))
+  await userEvent.click(screen.getByRole('button', { name: 'Tamil' }))
   await waitFor(() => expect(calls.find((c) => c.method === 'patch' && c.url === '/calls/callers/jaya')?.body).toEqual({ languages: ['Telugu', 'Tamil'] }))
   // Jaya is absent today
   await userEvent.click(within(row).getByRole('button', { name: `Jaya absent on ${today}` }))
   await waitFor(() => expect(calls.find((c) => c.method === 'put' && c.url === '/calls/callers/jaya/absence')?.body).toEqual({ day: today, absent: true }))
   // a branch's languages
-  await userEvent.click(within(screen.getByRole('group', { name: 'Languages of Anakapalli' })).getByRole('button', { name: 'Kannada' }))
+  const bLangs = screen.getByRole('group', { name: 'Languages of Anakapalli' })
+  await userEvent.click(within(bLangs).getByRole('button'))
+  await userEvent.click(screen.getByRole('button', { name: 'Kannada' }))
   await waitFor(() => expect(calls.find((c) => c.method === 'put' && c.url === '/calls/branches/b1')?.body).toEqual({ languages: ['Telugu', 'Kannada'] }))
 })
 

@@ -69,6 +69,19 @@ for _perm, _roles in _IRR.items():
     for _role in _roles:
         PERMISSIONS[_role] = PERMISSIONS[_role] | {_perm}
 
+# Entry documents & certificates:
+# - Upload, attach, scan and delete are restricted to Branch Manager and Sales Officer.
+# - View, list and inspect are accessible to Branch Manager, Sales Officer, Cluster Manager, Region Manager,
+#   Business Manager, Product Manager, and System Admin.
+_DOCUMENTS = {
+    "documents.view": ("sales_officer", "branch_manager", "cluster_manager", "region_manager",
+                       "product_manager", "business_manager", "admin"),
+    "documents.manage": ("sales_officer", "branch_manager"),
+}
+for _perm, _roles in _DOCUMENTS.items():
+    for _role in _roles:
+        PERMISSIONS[_role] = PERMISSIONS[_role] | {_perm}
+
 ALL_PERMISSIONS: frozenset[str] = frozenset().union(*PERMISSIONS.values())
 
 

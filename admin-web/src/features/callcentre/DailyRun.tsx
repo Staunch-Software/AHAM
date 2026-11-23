@@ -84,8 +84,22 @@ export default function DailyRun() {
   const ranNow = run.data?.run_date === day ? run.data : null
   return (
     <>
-      <PageTitle subtitle="Entries are called from the day after they are made. Retries go back to the caller who first handled the entry."
-        actions={<Input type="date" aria-label="Run date" value={day} max={isoToday()} onChange={(e) => { setDay(e.target.value); setMoved(null) }} className="w-auto" />}>
+      <PageTitle
+        subtitle="Entries are called from the day after they are made. Retries go back to the caller who first handled the entry."
+        actions={
+          <Input
+            type="date"
+            aria-label="Run date"
+            value={day}
+            max={isoToday()}
+            onChange={(e) => {
+              setDay(e.target.value)
+              setMoved(null)
+            }}
+            className="w-auto"
+          />
+        }
+      >
         Daily run & allocation
       </PageTitle>
       <ErrorBox error={[save.error, copy.error, run.error, assign.error, move.error, sheet.error, auto.error, pickCaller.error, applyMove.error].map((e) => e && errorMessage(e)).find(Boolean) ?? null} />

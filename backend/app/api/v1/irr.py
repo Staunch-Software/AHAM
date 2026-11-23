@@ -6,7 +6,7 @@ reads and writes. Every list is cut to the user's branches (app.services.scope),
 with format=csv or format=xlsx.
 """
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -305,10 +305,351 @@ async def month_by_product(as_of: date | None = None, level: Level = "branch", r
     }
 
 
+# ---------------------------------------------------------------- report 3: Trend & Trajectory (Daily, Monthly, Yearly)
+@router.get("/report/trend")
+async def report_trend(
+    as_of: date | None = None,
+    granularity: Literal["day", "month", "year"] = "day",
+    region_id: uuid.UUID | None = None,
+    branch_id: uuid.UUID | None = None,
+    user: User = Depends(require_perm("irr.view")),
+    s: AsyncSession = Depends(get_session),
+):
+    """Historical timeline of Weighted Average IRR and Disbursed Volume grouped by Date (Daily), Month (Monthly), or Year (Financial Year)."""
+    cfg = await load_config(s, user.company_id)
+    scope = await _scope(s, user, region_id, branch_id)
+    day = await _as_of(s, user, scope, as_of)
+
+    items = []
+    if granularity == "day":
+        # Days of the current month up to as_of (e.g. Nov 01 to Nov 07)
+        start_day = day.replace(day=1)
+        if day.day <= 2:
+            start_day = day - timedelta(days=6)
+        loans = await _loans(s, scope, start_day, day)
+
+        by_date: dict[date, list[calc.Loan]] = {}
+        for l in loans:
+            by_date.setdefault(l.day, []).append(l)
+
+        cur = start_day
+        while cur <= day:
+            day_loans = by_date.get(cur, [])
+            hl_g = calc.Group()
+            nhl_g = calc.Group()
+            for l in day_loans:
+                if l.product_class == "HL":
+                    hl_g.add(l)
+                elif l.product_class == "NHL":
+                    nhl_g.add(l)
+
+            items.append({
+                "key": cur.isoformat(),
+                "label": cur.strftime("%b %d"),
+                "hl_irr": _pct(hl_g.irr, cfg.decimals),
+                "nhl_irr": _pct(nhl_g.irr, cfg.decimals),
+                "hl_amount": float(hl_g.amount),
+                "nhl_amount": float(nhl_g.amount),
+                "total_amount": float(hl_g.amount + nhl_g.amount),
+                "hl_loans": hl_g.records,
+                "nhl_loans": nhl_g.records,
+                "total_loans": hl_g.records + nhl_g.records,
+            })
+            cur += timedelta(days=1)
+
+    elif granularity == "month":
+        fy_begin = calc.fy_start(day, cfg.fy_start_month)
+        loans = await _loans(s, scope, fy_begin, day)
+
+        cur_year = fy_begin.year
+        cur_month = fy_begin.month
+        while True:
+            m_start = date(cur_year, cur_month, 1)
+            next_m = cur_month + 1 if cur_month < 12 else 1
+            next_y = cur_year if cur_month < 12 else cur_year + 1
+            m_end = min(date(next_y, next_m, 1) - timedelta(days=1), day)
+
+            month_loans = [l for l in loans if m_start <= l.day <= m_end]
+            hl_g = calc.Group()
+            nhl_g = calc.Group()
+            for l in month_loans:
+                if l.product_class == "HL":
+                    hl_g.add(l)
+                elif l.product_class == "NHL":
+                    nhl_g.add(l)
+
+            label = m_start.strftime("%b")
+            if m_start.year == day.year and m_start.month == day.month:
+                label += " (MTD)"
+
+            items.append({
+                "key": f"{cur_year}-{cur_month:02d}",
+                "label": label,
+                "hl_irr": _pct(hl_g.irr, cfg.decimals),
+                "nhl_irr": _pct(nhl_g.irr, cfg.decimals),
+                "hl_amount": float(hl_g.amount),
+                "nhl_amount": float(nhl_g.amount),
+                "total_amount": float(hl_g.amount + nhl_g.amount),
+                "hl_loans": hl_g.records,
+                "nhl_loans": nhl_g.records,
+                "total_loans": hl_g.records + nhl_g.records,
+            })
+
+            if m_start.year == day.year and m_start.month == day.month:
+                break
+            cur_year, cur_month = next_y, next_m
+
+    elif granularity == "year":
+        cur_fy_start = calc.fy_start(day, cfg.fy_start_month)
+        years = [cur_fy_start.year - 3, cur_fy_start.year - 2, cur_fy_start.year - 1, cur_fy_start.year]
+        all_fy_start = date(years[0], cfg.fy_start_month, 1)
+        loans = await _loans(s, scope, all_fy_start, day)
+
+        for y in years:
+            fy_s = date(y, cfg.fy_start_month, 1)
+            fy_e = min(date(y + 1, cfg.fy_start_month, 1) - timedelta(days=1), day)
+            if fy_s > day:
+                continue
+
+            fy_loans = [l for l in loans if fy_s <= l.day <= fy_e]
+            hl_g = calc.Group()
+            nhl_g = calc.Group()
+            for l in fy_loans:
+                if l.product_class == "HL":
+                    hl_g.add(l)
+                elif l.product_class == "NHL":
+                    nhl_g.add(l)
+
+            fy_label = f"FY {y}-{str(y+1)[-2:]}"
+            if y == cur_fy_start.year:
+                fy_label += " (YTD)"
+
+            items.append({
+                "key": f"FY{y}",
+                "label": fy_label,
+                "hl_irr": _pct(hl_g.irr, cfg.decimals),
+                "nhl_irr": _pct(nhl_g.irr, cfg.decimals),
+                "hl_amount": float(hl_g.amount),
+                "nhl_amount": float(nhl_g.amount),
+                "total_amount": float(hl_g.amount + nhl_g.amount),
+                "hl_loans": hl_g.records,
+                "nhl_loans": nhl_g.records,
+                "total_loans": hl_g.records + nhl_g.records,
+            })
+
+    return {
+        "as_of": day,
+        "granularity": granularity,
+        "items": items,
+    }
+
+
 # ---------------------------------------------------------------- loan-level detail (audit)
 DETAIL_HEADER = ["Loan account number", "Disbursement reference", "Disbursement date", "Branch code", "Branch",
                  "Region", "Product", "Product class", "Disbursed amount (₹)", "Tenure (months)", "ROI (%)",
                  "Weight (amount × tenure)", "Transaction IRR (amount × tenure × ROI)"]
+
+
+@router.get("/export/complete-workbook")
+async def export_complete_workbook(
+    as_of: date | None = None,
+    region_id: uuid.UUID | None = None,
+    branch_id: uuid.UUID | None = None,
+    user: User = Depends(require_perm("irr.view")),
+    s: AsyncSession = Depends(get_session),
+):
+    """Exports the corporate 4-sheet Executive IRR Workbook matching the business standard:
+    Sheet 1: All Disbursements (Full Year register with loan details & bottom totals)
+    Sheet 2: Period Disbursements (Filtered MTD loans with totals)
+    Sheet 3: TD MTD YTD Summary (2-tier merged headers: TD, MTD, YTD over No., vol in Lakhs, IRR)
+    Sheet 4: Product MTD Summary (2-tier merged headers: HL MTD, NHL MTD, TOTAL MTD over No., vol, IRR)
+    """
+    cfg = await load_config(s, user.company_id)
+    scope = await _scope(s, user, region_id, branch_id)
+    day = await _as_of(s, user, scope, as_of)
+    bounds = calc.period_bounds(day, cfg.fy_start_month)
+
+    ytd_start = bounds["YTD"][0]
+    mtd_start = bounds["MTD"][0]
+
+    q = (
+        select(
+            Disbursement.loan_account,
+            Disbursement.disbursement_ref,
+            Disbursement.customer_name,
+            Disbursement.disbursement_date,
+            Disbursement.amount,
+            Disbursement.tenure_months,
+            Disbursement.roi,
+            Disbursement.product_class,
+            Branch.name.label("branch_name"),
+            Region.name.label("region_name"),
+            Branch.id.label("branch_id"),
+            Region.id.label("region_id"),
+        )
+        .outerjoin(Branch, Branch.id == Disbursement.branch_id)
+        .outerjoin(Region, Region.id == Disbursement.region_id)
+        .where(
+            *scope.conds,
+            *ELIGIBLE,
+            Disbursement.disbursement_date >= ytd_start,
+            Disbursement.disbursement_date <= day,
+        )
+        .order_by(Disbursement.disbursement_date.asc())
+    )
+    raw_rows = (await s.execute(q)).all()
+
+    def to_loan_dict(r):
+        dt = r.disbursement_date
+        month_start = dt.replace(day=1)
+        fy_year = dt.year if dt.month >= cfg.fy_start_month else dt.year - 1
+        fy_str = f"{fy_year}-{fy_year + 1}"
+        ten_years = float(r.tenure_months or 0)
+        if ten_years > 36:
+            ten_years = round(ten_years / 12, 1)
+
+        return {
+            "account_number": r.loan_account,
+            "disbursement_ref": r.disbursement_ref,
+            "customer_name": r.customer_name or "—",
+            "date": dt.isoformat(),
+            "month_start": month_start.isoformat(),
+            "fy": fy_str,
+            "amount": float(r.amount),
+            "tenure": ten_years,
+            "roi": float(r.roi or 0),
+            "product_class": (r.product_class or "HL").upper(),
+            "branch": r.branch_name or "Unknown",
+            "region": r.region_name or "Unknown",
+            "branch_id": str(r.branch_id) if r.branch_id else None,
+            "region_id": str(r.region_id) if r.region_id else None,
+        }
+
+    all_loans = [to_loan_dict(r) for r in raw_rows]
+    period_loans = [l for l in all_loans if l["date"] >= mtd_start.isoformat() and l["date"] <= day.isoformat()]
+
+    loans_all = [
+        calc.Loan(
+            r.loan_account,
+            r.disbursement_date,
+            r.amount,
+            r.tenure_months,
+            r.roi,
+            r.product_class,
+            r.branch_id,
+            r.region_id,
+        )
+        for r in raw_rows
+    ]
+
+    branches_by_reg: dict[uuid.UUID | None, list[Branch]] = {}
+    for bid, b in scope.branches.items():
+        rid = b.region_id
+        branches_by_reg.setdefault(rid, []).append(b)
+
+    for b_list in branches_by_reg.values():
+        b_list.sort(key=lambda x: x.name)
+
+    regions_list = sorted(
+        [
+            (rid, scope.regions.get(rid, NO_REGION))
+            for rid in scope.regions
+            if rid in branches_by_reg or not scope.branches
+        ],
+        key=lambda x: x[1],
+    )
+
+    bounds_map = {"TD": bounds["TD"], "MTD": bounds["MTD"], "YTD": bounds["YTD"]}
+    br_period_groups = calc.summarise_bounds(loans_all, bounds_map, lambda l: l.branch_id)
+    reg_period_groups = calc.summarise_bounds(loans_all, bounds_map, lambda l: l.region_id)
+    tot_period_groups = calc.summarise_bounds(loans_all, bounds_map).get(None, {})
+
+    def _pack_cell(g):
+        if not g:
+            return {"records": 0, "amount": 0.0, "irr": None}
+        return {
+            "records": g.records,
+            "amount": float(g.amount),
+            "irr": _pct(g.irr, cfg.decimals),
+        }
+
+    period_regions_data = []
+    for rid, rname in regions_list:
+        reg_g = reg_period_groups.get(rid, {})
+        reg_periods = {p: _pack_cell(reg_g.get(p)) for p in ("TD", "MTD", "YTD")}
+
+        br_items = []
+        for b in branches_by_reg.get(rid, []):
+            bg = br_period_groups.get(b.id, {})
+            br_periods = {p: _pack_cell(bg.get(p)) for p in ("TD", "MTD", "YTD")}
+            br_items.append({"label": b.name, "periods": br_periods})
+
+        period_regions_data.append({"label": rname, "periods": reg_periods, "branches": br_items})
+
+    period_summary = {
+        "regions": period_regions_data,
+        "total": {"periods": {p: _pack_cell(tot_period_groups.get(p)) for p in ("TD", "MTD", "YTD")}},
+    }
+
+    mtd_loans = [l for l in loans_all if l.day >= mtd_start and l.day <= day]
+    hl_loans = [l for l in mtd_loans if l.product_class == "HL"]
+    nhl_loans = [l for l in mtd_loans if l.product_class == "NHL"]
+
+    br_hl = {k: v.get("MTD") for k, v in calc.summarise(hl_loans, day, cfg.fy_start_month, lambda l: l.branch_id).items()}
+    br_nhl = {k: v.get("MTD") for k, v in calc.summarise(nhl_loans, day, cfg.fy_start_month, lambda l: l.branch_id).items()}
+    br_tot = {k: v.get("MTD") for k, v in calc.summarise(mtd_loans, day, cfg.fy_start_month, lambda l: l.branch_id).items()}
+
+    reg_hl = {k: v.get("MTD") for k, v in calc.summarise(hl_loans, day, cfg.fy_start_month, lambda l: l.region_id).items()}
+    reg_nhl = {k: v.get("MTD") for k, v in calc.summarise(nhl_loans, day, cfg.fy_start_month, lambda l: l.region_id).items()}
+    reg_tot = {k: v.get("MTD") for k, v in calc.summarise(mtd_loans, day, cfg.fy_start_month, lambda l: l.region_id).items()}
+
+    tot_hl = calc.summarise(hl_loans, day, cfg.fy_start_month).get(None, {}).get("MTD")
+    tot_nhl = calc.summarise(nhl_loans, day, cfg.fy_start_month).get(None, {}).get("MTD")
+    tot_all = calc.summarise(mtd_loans, day, cfg.fy_start_month).get(None, {}).get("MTD")
+
+    product_regions_data = []
+    for rid, rname in regions_list:
+        reg_classes = {
+            "HL": _pack_cell(reg_hl.get(rid)),
+            "NHL": _pack_cell(reg_nhl.get(rid)),
+            "TOTAL": _pack_cell(reg_tot.get(rid)),
+        }
+        br_items = []
+        for b in branches_by_reg.get(rid, []):
+            br_classes = {
+                "HL": _pack_cell(br_hl.get(b.id)),
+                "NHL": _pack_cell(br_nhl.get(b.id)),
+                "TOTAL": _pack_cell(br_tot.get(b.id)),
+            }
+            br_items.append({"label": b.name, "classes": br_classes})
+
+        product_regions_data.append({"label": rname, "classes": reg_classes, "branches": br_items})
+
+    product_summary = {
+        "regions": product_regions_data,
+        "total": {
+            "classes": {
+                "HL": _pack_cell(tot_hl),
+                "NHL": _pack_cell(tot_nhl),
+                "TOTAL": _pack_cell(tot_all),
+            }
+        },
+    }
+
+    xlsx_bytes = export.build_complete_irr_workbook(
+        all_loans=all_loans,
+        period_loans=period_loans,
+        period_summary=period_summary,
+        product_summary=product_summary,
+        as_of_str=str(day),
+    )
+
+    filename = f"IRR_Master_Workbook_{day}.xlsx"
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/detail")

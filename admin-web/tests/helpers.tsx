@@ -88,6 +88,7 @@ export function installApiMock(role: string | null, extra: Record<string, any> =
     if (['/branches', '/regions', '/clusters'].includes(url)) return { data: [] }
     if (url === '/roles') return { data: { portals: {}, roles: [] } }
     if (url === '/employees') return { data: { items: [], total: 0, page: 1, page_size: 25 } }
+    if (url === '/calls/history') return { data: { items: [], total: 0, page: 1, page_size: 25 } }
     throw new Error(`unhandled GET ${url}`)
   }
   handlers.post = (url) => {
@@ -114,6 +115,7 @@ vi.mock('../src/services/api', () => {
     api: { get: wrap('get'), post: wrap('post'), patch: wrap('patch'), put: wrap('put'), delete: wrap('delete') },
     API_BASE: '/api/v1',
     setPortal: () => {},
+    getActivePortal: () => null,
     tokens: {
       get access() { return store.access },
       get refresh() { return store.refresh },

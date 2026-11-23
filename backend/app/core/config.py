@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     refresh_token_days: int = 30
     storage_backend: str = "local"
     storage_root: str = "./data/storage"
+    s3_bucket_name: str = ""
+    s3_region: str = "ap-south-1"
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    s3_endpoint_url: str | None = None
+    s3_use_ssl: bool = True
     file_url_secret: str = "dev-only-file-secret"
     file_url_ttl_seconds: int = 300
     max_upload_bytes: int = 15 * 1024 * 1024

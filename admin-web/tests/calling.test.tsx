@@ -136,3 +136,56 @@ test('uploads check a file first without saving it', async () => {
   expect(await screen.findByText('Check only: nothing was saved.')).toBeInTheDocument()
   expect((calls.find((c) => c.url === '/imports/roster')!.body as FormData).get('dry_run')).toBe('true')
 })
+
+test('caller page allows searching and filtering the queue, and switching to call history', async () => {
+  const callRow = {
+    ...entry({ id: 'e1', person_name: 'Murali Krishna', phone: '9848123456', category: 'lead' }),
+    allocation_id: 'a1', kind: 'fresh' as const, run_date: '2026-10-21', caller_id: 'u-caller', caller: 'Test caller',
+    tries_today: 0, unanswered_count: 0,
+  }
+  const historyRow = {
+    id: 'att-1', entry_id: 'e1', entry_code: 'AHFL90001-20261020-100000', person_name: 'Murali Krishna',
+    phone: '9848123456', category: 'lead', category_label: 'Lead', call_group: 'lead' as const,
+    branch_id: 'b1', branch_name: 'Vijayawada', so_name: 'Ravi Kumar', caller_id: 'u-caller',
+    caller_name: 'Test caller', call_date: '2026-10-21', slot: '10-11', outcome: 'Connected',
+    cycle: 1, next_date: null, row_status: 'Validated – customer confirmed', answers: {},
+    created_at: '2026-10-21T05:00:00Z', current_status: 'Validated – customer confirmed',
+    rag: 'GREEN' as const, lead_id: 'TCS-101',
+  }
+
+  installApiMock('caller', {
+    '/calls/my-list': { today: '2026-10-21', items: [callRow], called_today: [] },
+    '/calls/history': { items: [historyRow], total: 1, page: 1, page_size: 25 },
+  })
+
+  renderApp('/callcentre/calls')
+  // Shows customer on the queue
+  expect(await screen.findByText('Murali Krishna')).toBeInTheDocument()
+  expect(screen.getByText(/Mobile: 9848123456/)).toBeInTheDocument()
+
+  // Filter with search input
+  const searchInput = screen.getByPlaceholderText(/Search by customer name/i)
+  await userEvent.type(searchInput, 'NonExistent')
+  expect(await screen.findByText('No matching entries found.')).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Clear all filters' }))
+  expect(await screen.findByText('Murali Krishna')).toBeInTheDocument()
+
+  // Switch to Call History tab
+  await userEvent.click(screen.getByRole('button', { name: 'Call history & actioned' }))
+  expect(await screen.findByText('Validated – customer confirmed')).toBeInTheDocument()
+  expect(screen.getByText('Lead ID: TCS-101')).toBeInTheDocument()
+  expect(screen.getAllByText('Connected').length).toBeGreaterThanOrEqual(2) // in dropdown and in badge
+  expect(screen.getByRole('link', { name: /View entry/i })).toHaveAttribute('href', '/callcentre/calls/e1')
+})
+
+test('caller portal includes Entries in navigation with entries.read permission', async () => {
+  installApiMock('caller', {
+    '/calls/my-list': { today: '2026-10-21', items: [] },
+    '/entries': { items: [], total: 0, page: 1, page_size: 25 },
+  })
+  renderApp('/callcentre/calls')
+  const nav = await screen.findByRole('navigation', { name: 'Main' })
+  const entriesLink = within(nav).getByRole('link', { name: 'Entries' })
+  expect(entriesLink).toBeInTheDocument()
+  expect(entriesLink).toHaveAttribute('href', '/callcentre/entries')
+})

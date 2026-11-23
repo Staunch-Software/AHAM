@@ -19,27 +19,39 @@ const DASH = {
   },
 }
 
-test('the chooser offers the three web portals and points SOs to the app', async () => {
+test('the root path renders the unified sign-in page without exposing internal workflows', async () => {
   installApiMock(null)
   renderApp('/')
-  for (const p of ['manage', 'callcentre', 'admin']) expect(screen.getByTestId(`portal-${p}`)).toBeInTheDocument()
-  expect(screen.getByText(/Sales Officers use the AHAM Sankalp app/)).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument()
+  expect(screen.queryByTestId('portal-manage')).not.toBeInTheDocument()
+  expect(screen.queryByText(/SO meets a customer/i)).not.toBeInTheDocument()
 })
 
-test('sign-in sends the portal; an account of another portal gets a link to its own portal', async () => {
+test('sign-in sends credentials and routes to the user portal without choosing', async () => {
   installApiMock(null)
   handlers.post = (url) => {
-    if (url === '/auth/login') throw Object.assign(new Error('403'), { response: { status: 403, data: { detail: { code: 'wrong_portal', portal: 'callcentre', message: 'This account signs in at the Call-centre portal, not here.' } } } })
+    if (url === '/auth/login') return { data: { access_token: 'new-tok', refresh_token: 'new-ref', portal: 'manage', role: 'branch_manager' } }
     throw new Error(url)
   }
-  renderApp('/manage/login')
+  renderApp('/login')
+  await userEvent.type(await screen.findByLabelText('Emp ID or email'), 'AHFL90061')
+  await userEvent.type(screen.getByLabelText('Password'), 'secret')
+  await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+  expect(calls.find((c) => c.url === '/auth/login')?.body).toEqual({ identifier: 'AHFL90061', password: 'secret' })
+})
+
+test('mobile-only account shows configured for mobile app message', async () => {
+  installApiMock(null)
+  handlers.post = (url) => {
+    if (url === '/auth/login') throw Object.assign(new Error('403'), { response: { status: 403, data: { detail: { code: 'mobile_only', portal: 'mobile', message: 'This account is configured for the AHAM Sankalp mobile app.' } } } })
+    throw new Error(url)
+  }
+  renderApp('/login')
   await userEvent.type(await screen.findByLabelText('Emp ID or email'), 'AHFL90061')
   await userEvent.type(screen.getByLabelText('Password'), 'secret')
   await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
   const alert = await screen.findByRole('alert')
-  expect(alert).toHaveTextContent('signs in at the Call-centre portal')
-  expect(within(alert).getByRole('link')).toHaveAttribute('href', '/callcentre/login')
-  expect(calls.find((c) => c.url === '/auth/login')?.body).toEqual({ identifier: 'AHFL90061', password: 'secret', portal: 'manage' })
+  expect(alert).toHaveTextContent('This account is configured for the AHAM Sankalp mobile app.')
 })
 
 test('a temporary password must be replaced before the portal opens', async () => {
@@ -110,9 +122,9 @@ test('a page outside the role is refused, and a session of another portal is not
   const { unmount } = renderApp('/callcentre/run')
   expect(await screen.findByText('Your role cannot open this page.')).toBeInTheDocument()
   unmount()
-  installApiMock('caller')
-  renderApp('/admin')  // a caller's session opened at the call centre does not open the admin portal
-  await waitFor(() => expect(screen.getByTestId('portal-admin')).toBeInTheDocument())
+  installApiMock('caller', { '/calls/my-list': { today: '2026-10-21', items: [] } })
+  renderApp('/admin')  // a caller's session opened at another portal automatically routes to their own portal
+  expect(await screen.findByRole('heading', { name: 'My calls' })).toBeInTheDocument()
 })
 
 test('live updates subscribe to the entry stream and refetch on a new entry', async () => {
@@ -126,4 +138,29 @@ test('live updates subscribe to the entry stream and refetch on a new entry', as
   const before = n
   es.emit('entry.created')
   await waitFor(() => expect(n).toBeGreaterThan(before))
+})
+
+test('dashboard KPI cards link to entries filtered by period and metric', async () => {
+  installApiMock('branch_manager', {
+    '/dashboard': DASH,
+    '/entries': { items: [], total: 0, page: 1, page_size: 25 },
+  })
+  renderApp('/manage/dashboard')
+  const entriesKpi = await screen.findByTestId('kpi-entries')
+  const entriesLink = entriesKpi.closest('a')!
+  expect(entriesLink).toHaveAttribute('href', '/manage/entries?date_from=2026-10-21&date_to=2026-10-21&date_field=count')
+
+  const validatedKpi = screen.getByTestId('kpi-validated')
+  const validatedLink = validatedKpi.closest('a')!
+  expect(validatedLink).toHaveAttribute('href', '/manage/entries?date_from=2026-10-21&date_to=2026-10-21&date_field=count&customer_validated=true')
+
+  // Clicking the KPI card navigates to Entries page and shows the active dashboard filter banner
+  await userEvent.click(validatedLink)
+  expect(await screen.findByText('Filtered from Dashboard:')).toBeInTheDocument()
+  expect(screen.getByText('Customers validated')).toBeInTheDocument()
+  expect(screen.getByText(/Count date: 2026-10-21 to 2026-10-21/)).toBeInTheDocument()
+
+  // Clicking "Clear dashboard filter" resets the filter banner
+  await userEvent.click(screen.getByRole('button', { name: /Clear dashboard filter/i }))
+  expect(screen.queryByText('Filtered from Dashboard:')).not.toBeInTheDocument()
 })

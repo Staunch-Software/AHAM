@@ -219,3 +219,30 @@ export interface CallRow extends EntryRow {
   unanswered_count: number
   first_try_overdue?: boolean
 }
+
+export interface CallHistoryItem {
+  id: string
+  entry_id: string
+  entry_code: string
+  person_name: string
+  phone: string
+  category: string
+  category_label: string
+  call_group: 'lead' | 'dsa_cp' | 'none'
+  branch_id: string
+  branch_name: string | null
+  so_name: string | null
+  caller_id: string
+  caller_name: string | null
+  call_date: string
+  slot: string
+  outcome: string
+  cycle: number
+  next_date: string | null
+  row_status: string | null
+  answers: Record<string, any> | null
+  created_at: string
+  current_status: string
+  rag: Rag
+  lead_id: string | null
+}

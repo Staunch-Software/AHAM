@@ -80,11 +80,16 @@ async def login(body: LoginIn, request: Request, session: AsyncSession = Depends
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid Emp ID / email or password")
     login_limiter.clear(key)
     home = portal_of(user.role)
-    if home != body.portal:
+    if body.portal and home != body.portal:
         # The password was right, so it is safe to say where this account signs in.
         raise HTTPException(status.HTTP_403_FORBIDDEN, {
             "code": "wrong_portal", "portal": home,
             "message": f"This account signs in at the {PORTALS.get(home, 'right')}, not here.",
+        })
+    if body.portal is None and home == "mobile":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, {
+            "code": "mobile_only", "portal": "mobile",
+            "message": "This account is configured for the AHAM Sankalp mobile app.",
         })
     return await _issue(session, user, home)
 

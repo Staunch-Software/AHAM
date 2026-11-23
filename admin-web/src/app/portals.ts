@@ -1,5 +1,5 @@
 import {
-  BarChart3, Building2, ClipboardList, Download, FileUp, GanttChartSquare, Headphones, LayoutDashboard, ListChecks,
+  BarChart3, Building2, ClipboardList, Download, FileUp, GanttChartSquare, Headphones, LayoutDashboard, LineChart, ListChecks,
   type LucideIcon, MapPinned, PhoneCall, ScrollText, Settings as SettingsIcon, ShieldCheck, Sparkles, UserCog, Users,
 } from 'lucide-react'
 import { Database, Percent, SlidersHorizontal, TriangleAlert } from 'lucide-react'
@@ -32,7 +32,12 @@ export const PORTALS: Record<PortalKey, PortalDef> = {
         ],
       },
       { title: 'People', items: [{ to: 'team', label: 'Team', icon: Users, perms: ['team.read'] }] },
-      { title: 'IRR', items: [{ to: 'irr', label: 'IRR report', icon: Percent, perms: ['irr.view'] }] },
+      {
+        title: 'IRR', items: [
+          { to: 'irr', label: 'IRR report', icon: Percent, perms: ['irr.view'] },
+          { to: 'irr-analytics', label: 'IRR analytics', icon: LineChart, perms: ['irr.view'] },
+        ],
+      },
     ],
   },
   callcentre: {
@@ -53,8 +58,9 @@ export const PORTALS: Record<PortalKey, PortalDef> = {
       {
         title: 'Insight', items: [
           { to: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, perms: ['dashboard.read'] },
+          { to: 'team-analytics', label: 'Team analytics', icon: LineChart, perms: ['calls.manage'] },
           { to: 'performance', label: 'Caller performance', icon: BarChart3, perms: ['calls.manage'] },
-          { to: 'entries', label: 'Entries', icon: GanttChartSquare, perms: ['calls.manage'] },
+          { to: 'entries', label: 'Entries', icon: GanttChartSquare, perms: ['entries.read'] },
         ],
       },
       { title: 'Data', items: [{ to: 'uploads', label: 'Login register', icon: FileUp, perms: ['login_register.upload'] }] },
@@ -84,6 +90,7 @@ export const PORTALS: Record<PortalKey, PortalDef> = {
       {
         title: 'IRR', items: [
           { to: 'irr', label: 'IRR report', icon: Percent, perms: ['irr.view'] },
+          { to: 'irr-analytics', label: 'IRR analytics', icon: LineChart, perms: ['irr.view'] },
           { to: 'irr-data', label: 'Disbursement register', icon: Database, perms: ['irr.manage'] },
           { to: 'irr-exceptions', label: 'IRR exceptions', icon: TriangleAlert, perms: ['irr.manage'] },
           { to: 'irr-settings', label: 'IRR settings', icon: SlidersHorizontal, perms: ['irr.manage'] },

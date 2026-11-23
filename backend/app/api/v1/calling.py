@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.api.deps import current_user, require_perm
 from app.api.v1.entries import entry_row, get_scoped_entry
@@ -29,6 +30,7 @@ from app.models import (
     User,
 )
 from app.services.periods import tz_of
+from app.services.phone import clean_phone
 from app.services.reference import audit
 from app.services.sankalp import call_sheet as CS
 from app.services.sankalp import callers as CL
@@ -36,8 +38,9 @@ from app.services.sankalp import rules as R
 from app.services.sankalp.handoff import review_green_channel, save_tracker
 from app.services.sankalp.ops import absent_callers, company_today, record_attempt, run_selection, save_lead_card
 from app.services.sankalp.schemas import AttemptIn, LeadCardIn, TrackerIn
-from app.services.sankalp.views import calling_detail
+from app.services.sankalp.views import calling_detail, current_status
 from app.services.settings import load_settings
+from app.services.tabular import parse_date
 
 router = APIRouter(tags=["call centre"])
 require_work = require_perm("calls.work")
@@ -117,6 +120,108 @@ async def my_list(caller_id: uuid.UUID | None = None, user: User = Depends(requi
                     if r["status"] == R.IN_RETRY and r["call_group"] == "lead" and r["tries_today"] < slots
                     and not (r["callback_date"] and r["callback_date"] > today)]
     return {"today": today, "items": await _rows_for(s, list(allocs), today), "called_today": called_today}
+
+
+@router.get("/calls/history")
+async def call_history(
+    caller_id: uuid.UUID | None = None,
+    q: str | None = None,
+    outcome: str | None = None,
+    branch_id: uuid.UUID | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=200),
+    user: User = Depends(require_work),
+    s: AsyncSession = Depends(get_session),
+):
+    """The history of calls made by the caller (or all callers if master owner)."""
+    who = caller_id if (caller_id and user.role == "master_owner") else (user.id if user.role != "master_owner" else None)
+
+    SoUser = aliased(User, name="so_user")
+    CallerUser = aliased(User, name="caller_user")
+
+    stmt = (
+        select(CallAttempt, SankalpEntry, Branch, SoUser, CallerUser, LeadCard.lead_id)
+        .join(SankalpEntry, SankalpEntry.id == CallAttempt.entry_id)
+        .join(Branch, Branch.id == SankalpEntry.branch_id)
+        .join(CallerUser, CallerUser.id == CallAttempt.caller_id)
+        .outerjoin(SoUser, SoUser.id == SankalpEntry.so_user_id)
+        .outerjoin(LeadCard, LeadCard.entry_id == SankalpEntry.id)
+        .where(CallAttempt.company_id == user.company_id)
+    )
+
+    if who:
+        stmt = stmt.where(CallAttempt.caller_id == who)
+
+    if q:
+        like = f"%{q.strip()}%"
+        phone_match = f"%{clean_phone(q) or q.strip()}%"
+        stmt = stmt.where(
+            or_(
+                SankalpEntry.entry_code.ilike(like),
+                SankalpEntry.person_name.ilike(like),
+                SankalpEntry.phone.like(phone_match),
+                SoUser.full_name.ilike(like),
+            )
+        )
+
+    if outcome:
+        stmt = stmt.where(CallAttempt.outcome == outcome)
+
+    if branch_id:
+        stmt = stmt.where(SankalpEntry.branch_id == branch_id)
+
+    try:
+        df, dt = parse_date(date_from), parse_date(date_to)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+    if df:
+        stmt = stmt.where(CallAttempt.call_date >= df)
+    if dt:
+        stmt = stmt.where(CallAttempt.call_date <= dt)
+
+    total = (await s.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+
+    rows = (
+        await s.execute(
+            stmt.order_by(CallAttempt.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).all()
+
+    items = []
+    for attempt, e, branch, so, caller_u, lead_id in rows:
+        items.append({
+            "id": str(attempt.id),
+            "entry_id": str(e.id),
+            "entry_code": e.entry_code,
+            "person_name": e.person_name,
+            "phone": e.phone,
+            "category": e.category,
+            "category_label": R.CATEGORIES.get(e.category, e.category),
+            "call_group": e.call_group,
+            "branch_id": str(branch.id),
+            "branch_name": branch.name,
+            "so_name": so.full_name if so else None,
+            "caller_id": str(caller_u.id),
+            "caller_name": caller_u.full_name if caller_u else None,
+            "call_date": attempt.call_date,
+            "slot": attempt.slot,
+            "outcome": attempt.outcome,
+            "cycle": attempt.cycle,
+            "next_date": attempt.next_date,
+            "row_status": attempt.row_status,
+            "answers": attempt.answers,
+            "created_at": attempt.created_at,
+            "current_status": current_status(e),
+            "rag": e.rag_override or e.rag,
+            "lead_id": lead_id,
+        })
+
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.post("/calls/entries/{entry_id}/attempts", status_code=201)

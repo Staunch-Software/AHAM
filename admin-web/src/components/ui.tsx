@@ -1,6 +1,7 @@
 import { Check, ChevronDown, Download, Loader2, Search, X } from 'lucide-react'
 import { ButtonHTMLAttributes, Children, forwardRef, InputHTMLAttributes, isValidElement, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { Link } from 'react-router-dom'
 import { errorMessage } from '../services/api'
 import { type Cells, saveCsv, saveXlsx, tableCells } from '../services/exporting'
 
@@ -507,18 +508,56 @@ const STAT_TONES = {
 } as const
 
 /** Headline number with an icon: used on the dashboard and the performance page. */
-export function StatCard({ label, value, hint, icon, tone = 'navy', testId, to }: { label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode; tone?: keyof typeof STAT_TONES; testId?: string; to?: ReactNode }) {
-  return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-card">
+export function StatCard({
+  label,
+  value,
+  hint,
+  icon,
+  tone = 'navy',
+  testId,
+  to,
+  linkTo,
+}: {
+  label: string
+  value: ReactNode
+  hint?: ReactNode
+  icon?: ReactNode
+  tone?: keyof typeof STAT_TONES
+  testId?: string
+  to?: ReactNode
+  linkTo?: string
+}) {
+  const content = (
+    <>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm text-slate-500">{label}</div>
-          <div className="tabular mt-1.5 text-3xl font-semibold tracking-tight text-brand-900" data-testid={testId}>{value}</div>
+          <div className="flex items-center gap-1.5 text-sm text-slate-500 group-hover:text-brand-700 transition">
+            <span>{label}</span>
+            {linkTo && <span className="text-xs text-brand-600 opacity-0 group-hover:opacity-100 transition" aria-hidden="true">&rarr;</span>}
+          </div>
+          <div className="tabular mt-1.5 text-3xl font-semibold tracking-tight text-brand-900 group-hover:text-brand-950 transition" data-testid={testId}>{value}</div>
         </div>
-        {icon && <span className={cx('grid h-10 w-10 shrink-0 place-items-center rounded-xl', STAT_TONES[tone])} aria-hidden="true">{icon}</span>}
+        {icon && <span className={cx('grid h-10 w-10 shrink-0 place-items-center rounded-xl transition group-hover:scale-105', STAT_TONES[tone])} aria-hidden="true">{icon}</span>}
       </div>
       {hint && <div className="mt-2 text-xs text-slate-500">{hint}</div>}
       {to}
+    </>
+  )
+
+  if (linkTo) {
+    return (
+      <Link
+        to={linkTo}
+        className="group block rounded-2xl border border-slate-200/80 bg-white p-4 shadow-card transition duration-150 hover:border-brand-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+      >
+        {content}
+      </Link>
+    )
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-card">
+      {content}
     </div>
   )
 }

@@ -5,7 +5,7 @@ from sqlalchemy import and_, false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.models import Branch, CallAllocation, SankalpEntry, User, UserBranchAssignment
+from app.models import Branch, CallAllocation, CallAttempt, SankalpEntry, User, UserBranchAssignment
 from app.security.rbac import ROLES
 
 
@@ -36,7 +36,8 @@ async def entry_scope(s: AsyncSession, user: User) -> ColumnElement[bool]:
         return and_(base, SankalpEntry.so_user_id == user.id)
     if scope == "allocated":
         mine = select(CallAllocation.entry_id).where(CallAllocation.caller_id == user.id)
-        return and_(base, or_(SankalpEntry.first_caller_id == user.id, SankalpEntry.id.in_(mine)))
+        mine_attempts = select(CallAttempt.entry_id).where(CallAttempt.caller_id == user.id)
+        return and_(base, or_(SankalpEntry.first_caller_id == user.id, SankalpEntry.id.in_(mine), SankalpEntry.id.in_(mine_attempts)))
     branches = await visible_branch_ids(s, user)
     if branches is None:
         return base

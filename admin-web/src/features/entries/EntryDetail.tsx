@@ -7,6 +7,7 @@ import { api, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
 import { accuracyLabel, fmtDevice, fmtServer, mapUrl, validCoords } from '../../services/format'
 import type { EntryDetail as Detail } from '../../types'
+import { DocumentGallery } from '../documents/DocumentGallery'
 import { AnswerDialog } from '../branch/AnswerDialog'
 import { CorrectNumberDialog, CorrectSoDialog, TrackerDialog } from './EntryDialogs'
 
@@ -132,6 +133,10 @@ export default function EntryDetail() {
           </Table>
         )}
       </Card>
+
+      <div className="mt-6">
+        <DocumentGallery entryId={e.id} entryCode={e.entry_code} />
+      </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         {lastAnswers && (

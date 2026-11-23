@@ -29,6 +29,10 @@ def get_storage() -> StorageBackend:
         from app.storage.local import LocalFileStorage
 
         return LocalFileStorage(s.storage_root)
+    if s.storage_backend == "s3":
+        from app.storage.s3 import S3Storage
+
+        return S3Storage(s)
     raise RuntimeError(f"Unsupported STORAGE_BACKEND: {s.storage_backend}")
 
 
@@ -45,3 +49,19 @@ def sign_file_url(photo_id: str, variant: str = "original") -> str:
 
 def verify_file_sig(photo_id: str, variant: str, exp: int, sig: str) -> bool:
     return exp >= time.time() and hmac.compare_digest(sig, _sig(photo_id, variant, exp))
+
+
+def sign_document_url(doc_id: str) -> str:
+    """Short-lived signed URL for an attached document or certificate."""
+    exp = int(time.time()) + get_settings().file_url_ttl_seconds
+    key = get_settings().file_url_secret.encode()
+    sig = hmac.new(key, f"doc.{doc_id}.{exp}".encode(), hashlib.sha256).hexdigest()
+    return f"/api/v1/documents/{doc_id}/view?exp={exp}&sig={sig}"
+
+
+def verify_document_sig(doc_id: str, exp: int, sig: str) -> bool:
+    if exp < time.time():
+        return False
+    key = get_settings().file_url_secret.encode()
+    expected = hmac.new(key, f"doc.{doc_id}.{exp}".encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, expected)

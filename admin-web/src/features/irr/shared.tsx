@@ -33,17 +33,36 @@ export const fmtDay = (iso?: string | null) => (iso ? iso.slice(0, 10).split('-'
 export const fmtNum = (n: number | null | undefined, max = 2) => (n == null ? '–' : n.toLocaleString('en-IN', { maximumFractionDigits: max }))
 
 /** "Export: CSV · Excel" for a table endpoint that accepts format=csv|xlsx. */
-export function ExportButtons({ url, params, name }: { url: string; params: Record<string, unknown>; name: string }) {
+export function ExportButtons({ url, params, name, includeMaster = false }: { url: string; params: Record<string, unknown>; name: string; includeMaster?: boolean }) {
   const [error, setError] = useState<string | null>(null)
+  const [downloadingMaster, setDownloadingMaster] = useState(false)
+
   const go = async (format: 'csv' | 'xlsx') => {
     setError(null)
     try { await download(url, { ...params, format }, `${name}.${format}`) } catch (e) { setError(errorMessage(e)) }
+  }
+  const goMaster = async () => {
+    setError(null)
+    setDownloadingMaster(true)
+    try {
+      const asOf = params.as_of ? String(params.as_of) : undefined
+      await download('/irr/export/complete-workbook', { as_of: asOf, region_id: params.region_id, branch_id: params.branch_id }, `IRR_Master_Workbook_${asOf || 'all'}.xlsx`)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setDownloadingMaster(false)
+    }
   }
   return (
     <div role="group" aria-label="Export" className="flex flex-wrap items-center gap-2">
       <span className="text-xs font-medium text-slate-500">Export</span>
       <Button small variant="secondary" aria-label="Export as CSV" onClick={() => go('csv')}><Download size={14} aria-hidden="true" />CSV</Button>
       <Button small variant="secondary" aria-label="Export as Excel" onClick={() => go('xlsx')}><FileSpreadsheet size={14} aria-hidden="true" />Excel</Button>
+      {includeMaster && (
+        <Button small variant="secondary" disabled={downloadingMaster} onClick={goMaster} className="border-emerald-300 bg-emerald-50/60 text-emerald-800 hover:bg-emerald-100/70">
+          <FileSpreadsheet size={14} className="text-emerald-700" />{downloadingMaster ? 'Generating…' : 'Master Workbook (.xlsx)'}
+        </Button>
+      )}
       {error && <span role="alert" className="text-xs text-roof-600">{error}</span>}
     </div>
   )

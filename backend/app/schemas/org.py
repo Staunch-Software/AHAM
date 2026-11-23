@@ -19,7 +19,7 @@ class LoginIn(BaseModel):
     # Emp ID (e.g. AHFL01810) or email. "email" is accepted as an alias for older clients.
     identifier: str = Field(min_length=1, max_length=200, validation_alias=AliasChoices("identifier", "email"))
     password: str = Field(min_length=1, max_length=200)
-    portal: Portal
+    portal: Portal | None = None
 
 
 class RefreshIn(BaseModel):

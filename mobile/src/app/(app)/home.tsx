@@ -88,13 +88,21 @@ export default function Home() {
             <T tone="small" style={{ marginTop: 4 }}>The call centre could not reach these people. Give the right number to your BM within {fixDays} days of the entry.</T>
             <View style={{ marginTop: 10, gap: 8 }}>
               {summary.data.correct_number.map((c) => (
-                <View key={c.id} style={st.fix}>
+                <Pressable
+                  key={c.id}
+                  onPress={() => router.push({ pathname: '/entry/[id]', params: { id: `s:${c.id}` } })}
+                  style={st.fix}
+                  accessibilityRole="button"
+                >
                   <View style={{ flex: 1 }}>
                     <T style={{ fontFamily: F.semibold }}>{c.person_name} · Mobile {c.phone}</T>
                     <T tone="small">{c.entry_code}{c.until ? ` · until ${c.until}` : ''}</T>
                   </View>
-                  <T tone="small" style={{ color: C.roof700 }}>{c.status}</T>
-                </View>
+                  <Row style={{ gap: 4 }}>
+                    <T tone="small" style={{ color: C.roof700 }}>{c.status}</T>
+                    <Icon name="chevron-right" size={16} color={C.roof700} />
+                  </Row>
+                </Pressable>
               ))}
             </View>
           </Card>

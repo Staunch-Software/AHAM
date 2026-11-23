@@ -1,8 +1,8 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { Percent, TriangleAlert } from 'lucide-react'
+import { BarChart3, Percent, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Card, cx, Dialog, EmptyState, ErrorBox, Input, Note, PageTitle, Pager, Segmented, Select, Skeleton, Table, Td } from '../../components/ui'
+import { Button, Card, cx, Dialog, EmptyState, ErrorBox, Input, Note, PageTitle, Pager, Segmented, Select, Skeleton, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
 import { useBranches, useRegions } from '../../services/meta'
@@ -167,18 +167,56 @@ export default function IrrReport() {
 
   return (
     <>
-      <PageTitle subtitle="Weighted average IRR of Home Loans (HL) and Non-Home Loans / LAP (NHL), from the Disbursement Register."
-        actions={<>
-          {!isRange && <label className="flex items-center gap-2 text-xs text-slate-500">As of<Input type="date" aria-label="As of date" value={day} onChange={(e) => setAsOf(e.target.value)} className="w-auto" /></label>}
-          {(regions?.length ?? 0) > 1 && (
-            <Select aria-label="Region" value={region} onChange={(e) => { setRegion(e.target.value); setBranch('') }} className="w-auto">
-              <option value="">All regions</option>{regions?.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+      <PageTitle
+        subtitle="Weighted average IRR of Home Loans (HL) and Non-Home Loans / LAP (NHL), from the Disbursement Register."
+        actions={
+          <>
+            {!isRange && (
+              <label className="flex items-center gap-2 text-xs text-slate-500">
+                As of
+                <Input
+                  type="date"
+                  aria-label="As of date"
+                  value={day}
+                  onChange={(e) => setAsOf(e.target.value)}
+                  className="w-auto"
+                />
+              </label>
+            )}
+            {(regions?.length ?? 0) > 1 && (
+              <Select
+                aria-label="Region"
+                value={region}
+                onChange={(e) => {
+                  setRegion(e.target.value)
+                  setBranch('')
+                }}
+                className="w-auto"
+              >
+                <option value="">All regions</option>
+                {regions?.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <Select
+              aria-label="Branch"
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+              className="w-auto"
+            >
+              <option value="">All my branches</option>
+              {shownBranches?.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
             </Select>
-          )}
-          <Select aria-label="Branch" value={branch} onChange={(e) => setBranch(e.target.value)} className="w-auto">
-            <option value="">All my branches</option>{shownBranches?.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </Select>
-        </>}>
+          </>
+        }
+      >
         IRR report
       </PageTitle>
 
@@ -229,7 +267,7 @@ export default function IrrReport() {
       <Card flush title={tab === 'periods' ? periodsTitle : 'HL and NHL, month to date'}
         subtitle={pd ? periodsSubtitle : md ? `${fmtDay(md.period.from)} to ${fmtDay(md.period.to)}.` : undefined}
         actions={data && <ExportButtons url={tab === 'periods' ? '/irr/report' : '/irr/report/month-by-product'} params={{ ...filters, as_of: day, ...(tab === 'periods' ? { product, ...choice } : {}) }}
-          name={tab === 'periods' ? exportName : `irr_HL_NHL_MTD_${level}_${day}`} />}>
+          name={tab === 'periods' ? exportName : `irr_HL_NHL_MTD_${level}_${day}`} includeMaster={true} />}>
         {isRange && !rangeReady ? <EmptyState title="Choose both dates of the range." />
           : current.isLoading || !data ? <div className="space-y-2 p-5">{Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-10" />)}</div>
           : !data.rows.length ? <EmptyState icon={<Percent size={20} />} title="No branches in your scope." />

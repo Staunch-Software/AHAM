@@ -290,7 +290,8 @@ def entry_row(e: SankalpEntry, so: User | None, branch: Branch | None, region: R
 
 
 async def list_query(s: AsyncSession, user: User, *, q=None, branch_id=None, region_id=None, so_user_id=None,
-                     category=None, status=None, rag=None, date_from=None, date_to=None, date_field="entry"):
+                     category=None, call_group=None, status=None, rag=None, date_from=None, date_to=None, date_field="entry",
+                     customer_validated=None, sankalp_success=None, lead_outcome=None, has_action=None):
     """The scoped, filtered entry query shared by lists, exports and the map."""
     stmt = (select(SankalpEntry, User, Branch, Region)
             .join(User, User.id == SankalpEntry.so_user_id)
@@ -310,6 +311,19 @@ async def list_query(s: AsyncSession, user: User, *, q=None, branch_id=None, reg
         stmt = stmt.where(SankalpEntry.so_user_id == so_user_id)
     if category:
         stmt = stmt.where(SankalpEntry.category.in_(category.split(",")))
+    if call_group:
+        stmt = stmt.where(SankalpEntry.call_group.in_(call_group.split(",")))
+    if customer_validated is not None:
+        stmt = stmt.where(SankalpEntry.customer_validated == customer_validated)
+    if sankalp_success is not None:
+        stmt = stmt.where(SankalpEntry.sankalp_success == sankalp_success)
+    if lead_outcome:
+        stmt = stmt.where(SankalpEntry.lead_outcome == lead_outcome)
+    if has_action is not None:
+        if has_action:
+            stmt = stmt.where(SankalpEntry.so_action.is_not(None))
+        else:
+            stmt = stmt.where(SankalpEntry.so_action.is_(None))
     if status:
         wanted = status.split("|")
         conds = [SankalpEntry.status.in_(wanted), SankalpEntry.selection_status.in_(wanted)]
@@ -329,9 +343,11 @@ async def list_query(s: AsyncSession, user: User, *, q=None, branch_id=None, reg
 @router.get("/entries")
 async def list_entries(
     q: str | None = None, branch_id: uuid.UUID | None = None, region_id: uuid.UUID | None = None,
-    so_user_id: uuid.UUID | None = None, category: str | None = None, status: str | None = None,
-    rag: str | None = None, date_from: str | None = None, date_to: str | None = None,
+    so_user_id: uuid.UUID | None = None, category: str | None = None, call_group: str | None = None,
+    status: str | None = None, rag: str | None = None, date_from: str | None = None, date_to: str | None = None,
     date_field: Literal["entry", "count"] = "entry",
+    customer_validated: bool | None = None, sankalp_success: bool | None = None,
+    lead_outcome: str | None = None, has_action: bool | None = None,
     page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=200),
     user: User = Depends(require_perm("entries.read")), s: AsyncSession = Depends(get_session),
 ):
@@ -339,8 +355,12 @@ async def list_entries(
         df, dt = parse_date(date_from), parse_date(date_to)
     except ValueError as e:
         raise HTTPException(422, str(e))
-    stmt = await list_query(s, user, q=q, branch_id=branch_id, region_id=region_id, so_user_id=so_user_id,
-                            category=category, status=status, rag=rag, date_from=df, date_to=dt, date_field=date_field)
+    stmt = await list_query(
+        s, user, q=q, branch_id=branch_id, region_id=region_id, so_user_id=so_user_id,
+        category=category, call_group=call_group, status=status, rag=rag, date_from=df, date_to=dt,
+        date_field=date_field, customer_validated=customer_validated, sankalp_success=sankalp_success,
+        lead_outcome=lead_outcome, has_action=has_action,
+    )
     total = (await s.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
     rows = (await s.execute(stmt.order_by(SankalpEntry.submitted_at_device.desc())
                             .offset((page - 1) * page_size).limit(page_size))).all()
