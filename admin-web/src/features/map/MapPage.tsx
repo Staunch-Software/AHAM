@@ -1,9 +1,9 @@
 /// <reference types="google.maps" />
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { Info, MapPin, MapPinOff, TriangleAlert } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Info, MapPin, MapPinOff, Search, TriangleAlert, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Avatar, Button, Card, cx, EmptyState, ErrorBox, ExportBar, PageTitle, RagBadge, Segmented, Select, Skeleton, Table, Td } from '../../components/ui'
+import { Avatar, Button, Card, cx, EmptyState, ErrorBox, ExportBar, Input, PageTitle, RagBadge, Segmented, Select, Skeleton, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
 import { fmtServer } from '../../services/format'
@@ -97,12 +97,18 @@ export default function MapPage() {
   const [period, setPeriod] = useState<Period>('week')
   const [branch, setBranch] = useState('')
   const [focus, setFocus] = useState<string | null>(null)
+  const [q, setQ] = useState('')
   const { data, isLoading, error } = useQuery({
     queryKey: ['map', period, branch],
     queryFn: async () => (await api.get<MapData>('/map/entries', { params: { period, branch_id: branch || undefined } })).data,
     placeholderData: keepPreviousData,
   })
   const openEntry = (id: string) => nav(path(`entries/${id}`))
+  const filteredMarkers = useMemo(() => {
+    const term = q.trim().toLowerCase()
+    if (!term) return data?.markers ?? []
+    return (data?.markers ?? []).filter((m) => [m.entry_code, m.person_name, m.so_name, m.branch, m.place_name].some((v) => v?.toLowerCase().includes(term)))
+  }, [data?.markers, q])
   return (
     <>
       <PageTitle subtitle="Where entries were made: the GPS fix recorded when Submit was pressed on the phone."
@@ -114,6 +120,18 @@ export default function MapPage() {
         </>}>
         Field map
       </PageTitle>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <label className="relative min-w-[220px] flex-1">
+          <span className="sr-only">Search entries</span>
+          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+          <Input className="pl-9" placeholder="Search by entry ID, customer, Sales Officer, or place" value={q} onChange={(e) => setQ(e.target.value)} />
+        </label>
+        {q && (
+          <button type="button" onClick={() => setQ('')} className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline">
+            <X size={13} aria-hidden="true" /> Clear
+          </button>
+        )}
+      </div>
       <ErrorBox error={error ? errorMessage(error) : null} />
       {isLoading || !data ? (
         <div role="status" aria-label="Loading map"><Skeleton className="mb-4 h-12" /><Skeleton className="h-[420px] lg:h-[600px]" /></div>
@@ -126,15 +144,17 @@ export default function MapPage() {
           </p>
           {MAP_KEY ? (
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-              <FieldMap apiKey={MAP_KEY} markers={data.markers} focusId={focus} onOpen={openEntry} />
+              <FieldMap apiKey={MAP_KEY} markers={filteredMarkers} focusId={focus} onOpen={openEntry} />
               <aside aria-label="Recorded locations" className="flex h-[420px] flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-card lg:h-[600px]">
                 <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                   <h2 className="text-sm font-semibold text-brand-900">Recorded locations</h2>
-                  <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700">{data.markers.length}</span>
+                  <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700">{filteredMarkers.length}</span>
                 </header>
-                {data.markers.length === 0 ? <EmptyState icon={<MapPinOff size={20} />} title="No entries with a GPS position in this period." /> : (
+                {filteredMarkers.length === 0 ? (
+                  <EmptyState icon={<MapPinOff size={20} />} title={q ? 'No matching entries found.' : 'No entries with a GPS position in this period.'} />
+                ) : (
                   <ul className="flex-1 divide-y divide-slate-100 overflow-y-auto">
-                    {data.markers.map((m) => {
+                    {filteredMarkers.map((m) => {
                       const cls = accuracyClass(m.accuracy_m)
                       return (
                         <li key={m.id} className={cx('px-4 py-3 transition', focus === m.id ? 'bg-brand-50/70' : 'hover:bg-slate-50')}>
@@ -164,15 +184,15 @@ export default function MapPage() {
                 </span>
               </div>
               <Card
-                title={`Locations (${data.markers.length})`}
+                title={`Locations (${filteredMarkers.length})`}
                 flush
                 actions={
-                  data.markers.length > 0 ? (
+                  filteredMarkers.length > 0 ? (
                     <ExportBar
+                      compact
                       name="Entries on the map"
-                      className="!p-0"
                       header={['Entry ID', 'Person met', 'Sales Officer', 'Branch', 'RAG', 'Place name', 'GPS coordinates', 'Accuracy', 'Entered on (phone time)']}
-                      rows={() => data.markers.map((m) => [
+                      rows={() => filteredMarkers.map((m) => [
                         m.entry_code,
                         m.person_name,
                         m.so_name,
@@ -187,14 +207,14 @@ export default function MapPage() {
                   ) : undefined
                 }
               >
-                {data.markers.length === 0 ? (
-                  <EmptyState icon={<MapPinOff size={20} />} title="No entries with a GPS position in this period." />
+                {filteredMarkers.length === 0 ? (
+                  <EmptyState icon={<MapPinOff size={20} />} title={q ? 'No matching entries found.' : 'No entries with a GPS position in this period.'} />
                 ) : (
                   <Table
                     head={['Entry ID', 'Person met', 'Sales Officer', 'RAG', 'Place name', 'GPS position', 'Entered on (phone time)']}
                     maxHeight="max-h-[min(440px,55vh)]"
                   >
-                    {data.markers.map((m) => (
+                    {filteredMarkers.map((m) => (
                       <tr key={m.id}>
                         <Td className="whitespace-nowrap"><Link className="font-mono text-xs font-semibold text-brand-700 hover:underline" to={path(`entries/${m.id}`)}>{m.entry_code}</Link></Td>
                         <Td>{m.person_name}</Td><Td>{m.so_name}<div className="text-xs text-slate-500">{m.branch}</div></Td><Td><RagBadge value={m.rag} /></Td>

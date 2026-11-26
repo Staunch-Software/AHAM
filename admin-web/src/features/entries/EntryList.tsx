@@ -91,30 +91,30 @@ export function EntryFilters({ params, onChange, extra }: { params: URLSearchPar
         <label className="relative sm:col-span-2">
           <span className="sr-only">Search</span>
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-          <Input className="pl-9" placeholder="Entry ID, name, mobile, SO or Emp ID" defaultValue={params.get('q') ?? ''}
+          <Input className="pl-9 !py-1.5 !text-sm" placeholder="Entry ID, name, mobile, SO or Emp ID" defaultValue={params.get('q') ?? ''}
             onKeyDown={(e) => e.key === 'Enter' && set('q', (e.target as HTMLInputElement).value.trim())}
             onBlur={(e) => e.target.value.trim() !== (params.get('q') ?? '') && set('q', e.target.value.trim())} />
         </label>
-        <Select aria-label="Branch" value={params.get('branch_id') ?? ''} onChange={(e) => set('branch_id', e.target.value)}>
+        <Select aria-label="Branch" className="!py-1.5 !text-sm" value={params.get('branch_id') ?? ''} onChange={(e) => set('branch_id', e.target.value)}>
           <option value="">All my branches</option>
           {branches?.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </Select>
-        <Select aria-label="Category" value={params.get('category') ?? ''} onChange={(e) => set('category', e.target.value)}>
+        <Select aria-label="Category" className="!py-1.5 !text-sm" value={params.get('category') ?? ''} onChange={(e) => set('category', e.target.value)}>
           <option value="">All categories</option>
           {meta?.categories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
         </Select>
-        <Select aria-label="RAG" value={params.get('rag') ?? ''} onChange={(e) => set('rag', e.target.value)}>
+        <Select aria-label="RAG" className="!py-1.5 !text-sm" value={params.get('rag') ?? ''} onChange={(e) => set('rag', e.target.value)}>
           <option value="">Any RAG</option>
           {meta?.rags.map((r) => <option key={r} value={r}>{RAG_LABEL[r] ?? r}</option>)}
         </Select>
-        <Select aria-label="Status" value={params.get('status') ?? ''} onChange={(e) => set('status', e.target.value)}>
+        <Select aria-label="Status" className="!py-1.5 !text-sm" value={params.get('status') ?? ''} onChange={(e) => set('status', e.target.value)}>
           <option value="">Any status</option>
           <option value="Pending">Waiting for the daily selection</option>
           <option value="Allocate">Waiting for the first call</option>
           {meta?.statuses.map((s) => <option key={s} value={s}>{s}</option>)}
         </Select>
-        <label className="flex items-center gap-2 text-xs text-slate-500">From<Input type="date" value={params.get('date_from') ?? ''} onChange={(e) => set('date_from', e.target.value)} /></label>
-        <label className="flex items-center gap-2 text-xs text-slate-500">To<Input type="date" value={params.get('date_to') ?? ''} onChange={(e) => set('date_to', e.target.value)} /></label>
+        <label className="flex items-center gap-2 text-xs text-slate-500">From<Input type="date" className="!py-1.5 !text-sm" value={params.get('date_from') ?? ''} onChange={(e) => set('date_from', e.target.value)} /></label>
+        <label className="flex items-center gap-2 text-xs text-slate-500">To<Input type="date" className="!py-1.5 !text-sm" value={params.get('date_to') ?? ''} onChange={(e) => set('date_to', e.target.value)} /></label>
         {extra}
       </div>
     </div>

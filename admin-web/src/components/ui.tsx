@@ -1,5 +1,5 @@
 import { Check, ChevronDown, Download, Loader2, Search, X } from 'lucide-react'
-import { ButtonHTMLAttributes, Children, forwardRef, InputHTMLAttributes, isValidElement, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useRef, useState } from 'react'
+import { ButtonHTMLAttributes, Children, forwardRef, InputHTMLAttributes, isValidElement, ReactNode, RefObject, SelectHTMLAttributes, TextareaHTMLAttributes, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { errorMessage } from '../services/api'
@@ -437,7 +437,7 @@ export function Card({
       {(title || actions || collapsible) && (
         <header
           className={cx(
-            'flex flex-wrap items-center justify-between gap-2',
+            'flex flex-wrap items-start justify-between gap-2',
             flush ? 'px-4 sm:px-5 pt-4 sm:pt-5' : '',
             isOpen && children ? 'mb-4' : 'mb-0',
             collapsible && 'cursor-pointer select-none group/hdr'
@@ -490,12 +490,12 @@ export const PageTitle = ({
   actions?: ReactNode
   className?: string
 }) => (
-  <div className={cx('mb-3 sm:mb-4 flex flex-wrap items-end justify-between gap-2.5 shrink-0', className)}>
-    <div>
+  <div className={cx('mb-3 sm:mb-4 flex flex-wrap items-start justify-between gap-2.5 shrink-0', className)}>
+    <div className="flex-1 min-w-0">
       <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-brand-900">{children}</h1>
       {subtitle && <p className="mt-0.5 text-xs sm:text-sm text-slate-500">{subtitle}</p>}
     </div>
-    {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+    {actions && <div className="flex flex-wrap items-center gap-2 shrink-0">{actions}</div>}
   </div>
 )
 
@@ -721,6 +721,8 @@ export function Table({
   containerClassName,
   maxHeight = 'max-h-[calc(100vh-16.5rem)]',
   stickyFirstColumn = true,
+  hideExportBar,
+  tableRef: externalRef,
 }: {
   head: string[]
   children: ReactNode
@@ -731,13 +733,18 @@ export function Table({
   containerClassName?: string
   maxHeight?: string
   stickyFirstColumn?: boolean
+  /** Skip the built-in "Export: CSV / Excel" row above the table — pass `tableRef` and render an `<ExportBar>` elsewhere (e.g. in the enclosing `Card`'s `actions`) instead. */
+  hideExportBar?: boolean
+  /** Lets a caller that renders its own `<ExportBar>` (with `hideExportBar`) read the same table's rows. */
+  tableRef?: RefObject<HTMLTableElement>
 }) {
-  const ref = useRef<HTMLTableElement>(null)
+  const internalRef = useRef<HTMLTableElement>(null)
+  const ref = externalRef ?? internalRef
   const columns = head.filter((h) => h !== '')
   const rows = async () => (exportAll ? exportAll() : tableCells(ref.current!, head.map((h) => h !== '')))
   return (
     <div className={cx('flex flex-col w-full min-h-0', containerClassName)}>
-      {exportName && <ExportBar name={exportName} header={exportHeader ?? columns} rows={rows} className="shrink-0" />}
+      {exportName && !hideExportBar && <ExportBar name={exportName} header={exportHeader ?? columns} rows={rows} className="shrink-0" />}
       <div className={cx('overflow-x-auto overflow-y-auto custom-scrollbar min-h-0', maxHeight, className)}>
         <table
           ref={ref}
@@ -774,8 +781,9 @@ export function Table({
   )
 }
 
-/** "Export: CSV · Excel" for any list: `rows` gives every row to export (fetching all pages when needed). */
-export function ExportBar({ name, header, rows, className }: { name: string; header: string[]; rows: () => Promise<Cells[]> | Cells[]; className?: string }) {
+/** "Export: CSV · Excel" for any list: `rows` gives every row to export (fetching all pages when needed).
+ *  `compact` drops the row's own padding, for embedding it in a `Card`'s `actions` instead of above the table. */
+export function ExportBar({ name, header, rows, className, compact }: { name: string; header: string[]; rows: () => Promise<Cells[]> | Cells[]; className?: string; compact?: boolean }) {
   const [busy, setBusy] = useState<'csv' | 'xlsx' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const go = async (kind: 'csv' | 'xlsx') => {
@@ -791,7 +799,7 @@ export function ExportBar({ name, header, rows, className }: { name: string; hea
     }
   }
   return (
-    <div className={cx('flex flex-wrap items-center justify-end gap-2 px-4 py-2 text-xs text-slate-500', className)}>
+    <div className={cx('flex flex-wrap items-center justify-end gap-2 text-xs text-slate-500', !compact && 'px-4 py-2', className)}>
       {error && <span role="alert" className="text-roof-600">Export failed: {error}</span>}
       <span>Export:</span>
       <button type="button" disabled={!!busy} onClick={() => go('csv')} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50"><Download size={12} aria-hidden="true" />{busy === 'csv' ? 'Preparing…' : 'CSV'}</button>

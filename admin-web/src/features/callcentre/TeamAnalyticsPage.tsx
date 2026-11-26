@@ -147,7 +147,7 @@ export default function TeamAnalyticsPage() {
 
       {/* FILTER CONTROL BAR: Clean horizontal alignment */}
       <div className="mb-6 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-nowrap items-center justify-between gap-4 overflow-x-auto">
           {/* Left: Caller Dropdown */}
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
@@ -183,15 +183,31 @@ export default function TeamAnalyticsPage() {
           {/* Right: Period Selector & Custom Date Picker */}
           <div className="flex items-center gap-3">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Timeframe:</span>
-            <Segmented
-              label="Period"
-              options={ANALYTICS_PERIODS}
-              value={period}
-              onChange={(p) => {
-                setPeriod(p)
-                setIsCustomDate(false)
-              }}
-            />
+            {isCustomDate ? (
+              <Select
+                aria-label="Period"
+                className="w-36 py-1.5 text-xs"
+                value={period}
+                onChange={(e) => {
+                  setPeriod(e.target.value as Period)
+                  setIsCustomDate(false)
+                }}
+              >
+                {ANALYTICS_PERIODS.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </Select>
+            ) : (
+              <Segmented
+                label="Period"
+                options={ANALYTICS_PERIODS}
+                value={period}
+                onChange={(p) => {
+                  setPeriod(p)
+                  setIsCustomDate(false)
+                }}
+              />
+            )}
 
             <button
               type="button"
@@ -213,7 +229,7 @@ export default function TeamAnalyticsPage() {
                   aria-label="From date"
                   value={dateFrom}
                   onChange={(e) => setDateFrom(e.target.value)}
-                  className="w-auto py-1 text-xs"
+                  className="!w-auto !py-1 !text-xs"
                 />
                 <span className="text-xs text-slate-400">to</span>
                 <Input
@@ -221,7 +237,7 @@ export default function TeamAnalyticsPage() {
                   aria-label="To date"
                   value={dateTo}
                   onChange={(e) => setDateTo(e.target.value)}
-                  className="w-auto py-1 text-xs"
+                  className="!w-auto !py-1 !text-xs"
                 />
               </div>
             )}

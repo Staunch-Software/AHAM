@@ -198,8 +198,8 @@ export default function MyCalls() {
         My calls
       </PageTitle>
 
-      {/* Tabs navigation */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      {/* Tabs, search, filters and export: one toolbar so they don't stack into separate blocks */}
+      <div className="mb-3 flex flex-wrap items-center gap-2.5 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-card">
         <Segmented
           label="Calling view"
           value={tab}
@@ -209,61 +209,10 @@ export default function MyCalls() {
             { value: 'history', label: 'Call history & actioned' },
           ]}
         />
-        {tab === 'queue' && items.length + calledToday.length > 0 && (
-          <ExportBar
-            name="My calls"
-            className="px-0"
-            header={['List', 'Entry ID', 'Person met', 'Mobile number', 'Category', 'Sales Officer', 'Branch', 'Calls today', 'Unanswered so far', 'Current status', 'RAG', 'PRIORITY reason']}
-            rows={() => [...items.map((r) => [GROUPS.find((g) => g.kind === r.kind)?.title ?? r.kind, r] as const), ...calledToday.map((r) => ['Called today, still not answered', r] as const)]
-              .map(([list, r]) => [list, r.entry_code, r.person_name, r.phone, r.category_label, r.so_name, r.branch_name, r.tries_today, r.unanswered_count, r.current_status, RAG_LABEL[r.rag] ?? r.rag, r.priority_reason])}
-          />
-        )}
-        {tab === 'history' && (historyData?.total ?? 0) > 0 && (
-          <ExportBar
-            name="Call history"
-            className="px-0"
-            header={['Date', 'Time slot', 'Entry ID', 'Person met', 'Mobile number', 'Category', 'Branch', 'Sales Officer', 'Outcome', 'Row status', 'Current status', 'RAG', 'Caller']}
-            rows={async () => {
-              const all = (await api.get<Page<CallHistoryItem>>('/calls/history', {
-                params: {
-                  caller_id: caller || undefined,
-                  q: historySearch || undefined,
-                  branch_id: historyBranch || undefined,
-                  outcome: historyOutcome || undefined,
-                  date_from: computedDates.from,
-                  date_to: computedDates.to,
-                  page: 1,
-                  page_size: 500,
-                },
-              })).data.items
-              return all.map((h) => [
-                h.call_date,
-                h.slot,
-                h.entry_code,
-                h.person_name,
-                h.phone,
-                h.category_label,
-                h.branch_name ?? '',
-                h.so_name ?? '',
-                h.outcome,
-                h.row_status ?? '',
-                h.current_status,
-                RAG_LABEL[h.rag] ?? h.rag,
-                h.caller_name ?? '',
-              ])
-            }}
-          />
-        )}
-      </div>
 
-      <ErrorBox error={error ? errorMessage(error) : historyError ? errorMessage(historyError) : null} />
-
-      {/* TAB 1: TODAY'S QUEUE */}
-      {tab === 'queue' && (
-        <>
-          {/* Filters for Today's Queue */}
-          <div className="mb-4 grid gap-2.5 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-card sm:grid-cols-2 lg:grid-cols-4">
-            <label className="relative sm:col-span-2">
+        {tab === 'queue' && (
+          <>
+            <label className="relative min-w-[200px] flex-1">
               <span className="sr-only">Search</span>
               <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
               <Input
@@ -274,37 +223,192 @@ export default function MyCalls() {
               />
             </label>
 
-            <Select aria-label="Branch filter" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+            <Select aria-label="Branch filter" className="w-40" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
               <option value="">All branches</option>
               {branches?.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </Select>
 
-            <Select aria-label="Category filter" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+            <Select aria-label="Category filter" className="w-40" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
               <option value="">All categories</option>
               {meta?.categories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
             </Select>
 
-            <Select aria-label="Queue group filter" value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}>
+            <Select aria-label="Queue group filter" className="w-40" value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}>
               <option value="">All queue groups</option>
               {GROUPS.map((g) => <option key={g.kind} value={g.kind}>{g.title}</option>)}
             </Select>
+          </>
+        )}
 
-            {hasQueueFilters && (
-              <div className="flex items-center justify-between pt-1 border-t border-slate-100 sm:col-span-2 lg:col-span-4 text-xs">
-                <span className="text-slate-600 font-medium">
-                  Showing {filteredItems.length} of {items.length} entries match criteria
-                </span>
+        {tab === 'history' && (
+          <>
+            <label className="relative min-w-[200px] flex-1">
+              <span className="sr-only">Search call history</span>
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <Input
+                className="pl-9"
+                placeholder="Search history by name, mobile, entry code, or SO..."
+                value={historySearch}
+                onChange={(e) => {
+                  setHistorySearch(e.target.value)
+                  setHistoryPage(1)
+                }}
+              />
+            </label>
+
+            <Select
+              aria-label="Filter history branch"
+              className="w-40"
+              value={historyBranch}
+              onChange={(e) => {
+                setHistoryBranch(e.target.value)
+                setHistoryPage(1)
+              }}>
+              <option value="">All branches</option>
+              {branches?.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </Select>
+
+            <Select
+              aria-label="Filter outcome"
+              className="w-40"
+              value={historyOutcome}
+              onChange={(e) => {
+                setHistoryOutcome(e.target.value)
+                setHistoryPage(1)
+              }}>
+              <option value="">All outcomes</option>
+              {meta?.outcomes.map((o) => <option key={o} value={o}>{o}</option>)}
+            </Select>
+          </>
+        )}
+
+        <div className="ml-auto flex items-center gap-2">
+          {tab === 'queue' && items.length + calledToday.length > 0 && (
+            <ExportBar
+              compact
+              name="My calls"
+              header={['List', 'Entry ID', 'Person met', 'Mobile number', 'Category', 'Sales Officer', 'Branch', 'Calls today', 'Unanswered so far', 'Current status', 'RAG', 'PRIORITY reason']}
+              rows={() => [...items.map((r) => [GROUPS.find((g) => g.kind === r.kind)?.title ?? r.kind, r] as const), ...calledToday.map((r) => ['Called today, still not answered', r] as const)]
+                .map(([list, r]) => [list, r.entry_code, r.person_name, r.phone, r.category_label, r.so_name, r.branch_name, r.tries_today, r.unanswered_count, r.current_status, RAG_LABEL[r.rag] ?? r.rag, r.priority_reason])}
+            />
+          )}
+          {tab === 'history' && (historyData?.total ?? 0) > 0 && (
+            <ExportBar
+              compact
+              name="Call history"
+              header={['Date', 'Time slot', 'Entry ID', 'Person met', 'Mobile number', 'Category', 'Branch', 'Sales Officer', 'Outcome', 'Row status', 'Current status', 'RAG', 'Caller']}
+              rows={async () => {
+                const all = (await api.get<Page<CallHistoryItem>>('/calls/history', {
+                  params: {
+                    caller_id: caller || undefined,
+                    q: historySearch || undefined,
+                    branch_id: historyBranch || undefined,
+                    outcome: historyOutcome || undefined,
+                    date_from: computedDates.from,
+                    date_to: computedDates.to,
+                    page: 1,
+                    page_size: 500,
+                  },
+                })).data.items
+                return all.map((h) => [
+                  h.call_date,
+                  h.slot,
+                  h.entry_code,
+                  h.person_name,
+                  h.phone,
+                  h.category_label,
+                  h.branch_name ?? '',
+                  h.so_name ?? '',
+                  h.outcome,
+                  h.row_status ?? '',
+                  h.current_status,
+                  RAG_LABEL[h.rag] ?? h.rag,
+                  h.caller_name ?? '',
+                ])
+              }}
+            />
+          )}
+        </div>
+
+        {tab === 'queue' && hasQueueFilters && (
+          <div className="flex w-full items-center justify-between border-t border-slate-100 pt-2 text-xs">
+            <span className="font-medium text-slate-600">
+              Showing {filteredItems.length} of {items.length} entries match criteria
+            </span>
+            <button
+              type="button"
+              onClick={clearQueueFilters}
+              className="inline-flex items-center gap-1 font-medium text-brand-700 hover:text-brand-900 underline"
+            >
+              <X size={13} aria-hidden="true" /> Reset filters
+            </button>
+          </div>
+        )}
+
+        {tab === 'history' && (
+          <div className="flex w-full flex-wrap items-center gap-3 border-t border-slate-100 pt-2">
+            <span className="text-xs font-medium text-slate-500">Date range:</span>
+            <div className="inline-flex flex-wrap rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs">
+              {(['all', 'today', 'yesterday', '7d', '30d', 'custom'] as const).map((p) => (
                 <button
+                  key={p}
                   type="button"
-                  onClick={clearQueueFilters}
-                  className="inline-flex items-center gap-1 font-medium text-brand-700 hover:text-brand-900 underline"
-                >
-                  <X size={13} aria-hidden="true" /> Reset filters
+                  onClick={() => {
+                    setDatePreset(p)
+                    setHistoryPage(1)
+                  }}
+                  className={cx(
+                    'rounded-md px-2.5 py-1 font-medium transition',
+                    datePreset === p ? 'bg-white text-brand-700 shadow-sm font-semibold' : 'text-slate-600 hover:text-slate-900',
+                  )}>
+                  {p === 'all' ? 'All time' : p === 'today' ? 'Today' : p === 'yesterday' ? 'Yesterday' : p === '7d' ? 'Last 7 days' : p === '30d' ? 'Last 30 days' : 'Custom'}
                 </button>
+              ))}
+            </div>
+
+            {datePreset === 'custom' && (
+              <div className="flex items-center gap-2 text-xs text-slate-600">
+                <span>From:</span>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => {
+                    setDateFrom(e.target.value)
+                    setHistoryPage(1)
+                  }}
+                  className="w-36 py-1 text-xs"
+                />
+                <span>To:</span>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => {
+                    setDateTo(e.target.value)
+                    setHistoryPage(1)
+                  }}
+                  className="w-36 py-1 text-xs"
+                />
               </div>
             )}
-          </div>
 
+            {hasHistoryFilters && (
+              <button
+                type="button"
+                onClick={clearHistoryFilters}
+                className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
+              >
+                <X size={12} aria-hidden="true" /> Reset filters
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <ErrorBox error={error ? errorMessage(error) : historyError ? errorMessage(historyError) : null} />
+
+      {/* TAB 1: TODAY'S QUEUE */}
+      {tab === 'queue' && (
+        <>
           {isLoading ? (
             <div className="space-y-3">
               {Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-16" />)}
@@ -385,101 +489,6 @@ export default function MyCalls() {
       {/* TAB 2: CALL HISTORY */}
       {tab === 'history' && (
         <>
-          {/* History Filters */}
-          <div className="mb-4 grid gap-2.5 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-card sm:grid-cols-2 lg:grid-cols-4">
-            <label className="relative sm:col-span-2">
-              <span className="sr-only">Search call history</span>
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-              <Input
-                className="pl-9"
-                placeholder="Search history by name, mobile, entry code, or SO..."
-                value={historySearch}
-                onChange={(e) => {
-                  setHistorySearch(e.target.value)
-                  setHistoryPage(1)
-                }}
-              />
-            </label>
-
-            <Select
-              aria-label="Filter history branch"
-              value={historyBranch}
-              onChange={(e) => {
-                setHistoryBranch(e.target.value)
-                setHistoryPage(1)
-              }}>
-              <option value="">All branches</option>
-              {branches?.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </Select>
-
-            <Select
-              aria-label="Filter outcome"
-              value={historyOutcome}
-              onChange={(e) => {
-                setHistoryOutcome(e.target.value)
-                setHistoryPage(1)
-              }}>
-              <option value="">All outcomes</option>
-              {meta?.outcomes.map((o) => <option key={o} value={o}>{o}</option>)}
-            </Select>
-
-            <div className="sm:col-span-2 lg:col-span-4 flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100">
-              <span className="text-xs font-medium text-slate-500">Date range:</span>
-              <div className="inline-flex flex-wrap rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs">
-                {(['all', 'today', 'yesterday', '7d', '30d', 'custom'] as const).map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => {
-                      setDatePreset(p)
-                      setHistoryPage(1)
-                    }}
-                    className={cx(
-                      'rounded-md px-2.5 py-1 font-medium transition',
-                      datePreset === p ? 'bg-white text-brand-700 shadow-sm font-semibold' : 'text-slate-600 hover:text-slate-900',
-                    )}>
-                    {p === 'all' ? 'All time' : p === 'today' ? 'Today' : p === 'yesterday' ? 'Yesterday' : p === '7d' ? 'Last 7 days' : p === '30d' ? 'Last 30 days' : 'Custom'}
-                  </button>
-                ))}
-              </div>
-
-              {datePreset === 'custom' && (
-                <div className="flex items-center gap-2 text-xs text-slate-600">
-                  <span>From:</span>
-                  <Input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => {
-                      setDateFrom(e.target.value)
-                      setHistoryPage(1)
-                    }}
-                    className="w-36 py-1 text-xs"
-                  />
-                  <span>To:</span>
-                  <Input
-                    type="date"
-                    value={dateTo}
-                    onChange={(e) => {
-                      setDateTo(e.target.value)
-                      setHistoryPage(1)
-                    }}
-                    className="w-36 py-1 text-xs"
-                  />
-                </div>
-              )}
-
-              {hasHistoryFilters && (
-                <button
-                  type="button"
-                  onClick={clearHistoryFilters}
-                  className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
-                >
-                  <X size={12} aria-hidden="true" /> Reset filters
-                </button>
-              )}
-            </div>
-          </div>
-
           {/* History Content */}
           {historyLoading ? (
             <div className="space-y-3">

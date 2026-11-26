@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { CalendarClock, ListChecks, TriangleAlert } from 'lucide-react'
-import { useState } from 'react'
+import { CalendarClock, ListChecks, Search, TriangleAlert, X } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, Card, cx, EmptyState, ErrorBox, Note, PageTitle, RagBadge, Skeleton, Table, Td } from '../../components/ui'
+import { Button, Card, cx, EmptyState, ErrorBox, Input, Note, PageTitle, RagBadge, Skeleton, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
 import type { EntryRow } from '../../types'
@@ -14,8 +14,14 @@ interface Lead extends EntryRow { handling_branch_name?: string | null; branch_a
 export default function BranchLeads() {
   const { me, path } = useAuth()
   const [answering, setAnswering] = useState<Lead | null>(null)
+  const [q, setQ] = useState('')
   const { data, isLoading, error } = useQuery({ queryKey: ['branch-leads'], queryFn: async () => (await api.get<{ today: string; items: Lead[] }>('/branch/leads')).data })
   const missed = useQuery({ queryKey: ['missed-dates'], queryFn: async () => (await api.get<{ branch: string; missed: number }[]>('/branch/missed-dates')).data })
+  const filtered = useMemo(() => {
+    const term = q.trim().toLowerCase()
+    if (!term) return data?.items ?? []
+    return (data?.items ?? []).filter((l) => [l.entry_code, l.person_name, l.phone, l.so_name, l.branch_name].some((v) => v?.toLowerCase().includes(term)))
+  }, [data?.items, q])
   return (
     <>
       <PageTitle subtitle={me?.role === 'region_manager' ? 'Leads of the branches in your region that have no Branch Manager.' : 'Validated leads of your branch: answer each with a code and a date.'}>
@@ -24,13 +30,28 @@ export default function BranchLeads() {
       {missed.data && missed.data.length > 0 && (
         <Note tone="gold"><TriangleAlert size={14} className="mr-1.5 inline" aria-hidden="true" />Missed dates: {missed.data.map((m) => `${m.branch} ${m.missed}`).join(' · ')}. A missed date is a promised login, follow-up or visit date that has passed.</Note>
       )}
+      {data && data.items.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <label className="relative min-w-[220px] flex-1">
+            <span className="sr-only">Search leads</span>
+            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+            <Input className="pl-9" placeholder="Search by entry ID, customer, mobile, or Sales Officer" value={q} onChange={(e) => setQ(e.target.value)} />
+          </label>
+          {q && (
+            <button type="button" onClick={() => setQ('')} className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline">
+              <X size={13} aria-hidden="true" /> Clear
+            </button>
+          )}
+        </div>
+      )}
       <ErrorBox error={error ? errorMessage(error) : null} />
       <Card flush>
         {isLoading || !data ? <div className="space-y-2 p-5">{Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-12" />)}</div>
           : data.items.length === 0 ? <EmptyState icon={<ListChecks size={20} />} title="No leads are waiting for your branch." hint="Validated leads appear here after the call centre speaks to the customer." />
-            : (
+            : filtered.length === 0 ? <EmptyState icon={<Search size={20} />} title="No matching leads found." hint="Try a different search term." />
+              : (
               <Table head={['Entry ID (current status)', 'Customer (mobile number)', 'Sales Officer', 'Next action and date', 'Branch’s last answer', 'RAG', '']} exportName="Leads to answer">
-                {data.items.map((l) => (
+                {filtered.map((l) => (
                   <tr key={l.id}>
                     <Td className="whitespace-nowrap"><Link className="font-mono text-xs font-semibold text-brand-700 hover:underline" to={path(`entries/${l.id}`)}>{l.entry_code}</Link><div className="text-xs text-slate-500">{l.current_status}</div></Td>
                     <Td><div className="font-medium text-slate-900">{l.person_name}</div><div className="tabular text-xs text-slate-500">Mobile: {l.phone}</div></Td>

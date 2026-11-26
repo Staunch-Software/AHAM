@@ -1,12 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { ClipboardList } from 'lucide-react'
-import { useState } from 'react'
-import { Card, EmptyState, ErrorBox, Input, PageTitle, Pager, Segmented, Select, Skeleton, Table, Td } from '../../components/ui'
+import { useRef, useState } from 'react'
+import { Card, EmptyState, ErrorBox, ExportBar, Input, PageTitle, Pager, Segmented, Select, Skeleton, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
 import { useMeta } from '../../services/meta'
 import type { EntryRow, Page } from '../../types'
-import { allPages } from '../../services/exporting'
+import { allPages, tableCells } from '../../services/exporting'
 import { EntryTable } from '../entries/EntryList'
 
 const KINDS = [
@@ -36,6 +36,8 @@ function ActionTotals({ expired, dates }: { expired: boolean; dates: { date_from
   const cols = data?.columns ?? []
   const sum = (a: string) => rows.reduce((n, r) => n + (r.counts[a] ?? 0), 0)
   const listLabel = LISTS.find((l) => l.value === list)!.label
+  const totalsHead = [by === 'branch' ? 'Branch' : 'Region', ...(by === 'branch' ? ['Region'] : []), ...cols, 'Total']
+  const totalsTableRef = useRef<HTMLTableElement>(null)
   return (
     <Card flush className="mb-6" title={`${expired ? 'Expired actions' : 'Open actions'}: totals by ${by}`}
       subtitle={`${listLabel}. Counted where the lead is worked (the handling branch, else the SO's branch), the same entries as the list below.`}
@@ -47,13 +49,16 @@ function ActionTotals({ expired, dates }: { expired: boolean; dates: { date_from
             <option value="">All regions</option>{regions.map((r) => <option key={r} value={r}>{r}</option>)}
           </Select>
         )}
+        {rows.length > 0 && (
+          <ExportBar compact name={`${expired ? 'Expired' : 'Open'} actions by ${by} - ${listLabel}${region ? ` - ${region}` : ''}`}
+            header={totalsHead} rows={() => tableCells(totalsTableRef.current!, totalsHead.map(() => true))} />
+        )}
       </div>}>
       <ErrorBox error={error ? errorMessage(error) : null} />
       {isLoading ? <div className="p-5"><Skeleton className="h-40" /></div>
         : rows.length === 0 ? <EmptyState icon={<ClipboardList size={20} />} title="Nothing to count." />
           : (
-            <Table head={[by === 'branch' ? 'Branch' : 'Region', ...(by === 'branch' ? ['Region'] : []), ...cols, 'Total']}
-              exportName={`${expired ? 'Expired' : 'Open'} actions by ${by} - ${listLabel}${region ? ` - ${region}` : ''}`}>
+            <Table head={totalsHead} tableRef={totalsTableRef}>
               {rows.map((r) => (
                 <tr key={r.id ?? r.label}>
                   <Td className="font-medium">{r.label}</Td>{by === 'branch' && <Td>{r.region ?? '–'}</Td>}
@@ -93,20 +98,20 @@ export default function Actions() {
     <>
       <PageTitle subtitle={view === 'expired'
         ? 'Actions whose window ran out before anyone acted on them: kept here so they can be followed up.'
-        : `What Sales Officers and branches need to do next, from the latest call.${lim ? ` "Correct number" stays open ${lim.correct_number_window_days} days from the entry; lead actions until login or rejection; others ${lim.action_window_days} days.` : ''}`}
-        actions={<div className="flex flex-wrap gap-2">
-          <Segmented label="View" options={VIEWS} value={view} onChange={(v) => { setView(v); setPage(1) }} />
-          <Segmented label="Action" options={KINDS} value={kind} onChange={(v) => { setKind(v); setPage(1) }} />
-          <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <span>Entries from</span>
-            <Input type="date" aria-label="Entries from" className="w-auto py-1 text-xs" value={from} max={to || undefined} onChange={(e) => { setFrom(e.target.value); setPage(1) }} />
-            <span>to</span>
-            <Input type="date" aria-label="Entries to" className="w-auto py-1 text-xs" value={to} min={from || undefined} onChange={(e) => { setTo(e.target.value); setPage(1) }} />
-            {(from || to) && <button type="button" className="font-semibold text-brand-700 hover:underline" onClick={() => { setFrom(''); setTo(''); setPage(1) }}>All dates</button>}
-          </div>
-        </div>}>
+        : `What Sales Officers and branches need to do next, from the latest call.${lim ? ` "Correct number" stays open ${lim.correct_number_window_days} days from the entry; lead actions until login or rejection; others ${lim.action_window_days} days.` : ''}`}>
         {view === 'expired' ? 'Expired actions' : 'Open actions'}
       </PageTitle>
+      <div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-card">
+        <Segmented label="View" options={VIEWS} value={view} onChange={(v) => { setView(v); setPage(1) }} />
+        <Segmented label="Action" options={KINDS} value={kind} onChange={(v) => { setKind(v); setPage(1) }} />
+        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+          <span>Entries from</span>
+          <Input type="date" aria-label="Entries from" className="!w-auto !py-1 !text-xs" value={from} max={to || undefined} onChange={(e) => { setFrom(e.target.value); setPage(1) }} />
+          <span>to</span>
+          <Input type="date" aria-label="Entries to" className="!w-auto !py-1 !text-xs" value={to} min={from || undefined} onChange={(e) => { setTo(e.target.value); setPage(1) }} />
+          {(from || to) && <button type="button" className="font-semibold text-brand-700 hover:underline" onClick={() => { setFrom(''); setTo(''); setPage(1) }}>All dates</button>}
+        </div>
+      </div>
       <ErrorBox error={error ? errorMessage(error) : null} />
       <ActionTotals expired={view === 'expired'} dates={dates} />
       <Card flush>

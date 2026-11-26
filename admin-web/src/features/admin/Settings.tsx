@@ -80,7 +80,7 @@ function Holidays() {
     <Card title="Holidays" subtitle="An entry made on a Sunday or a holiday counts on the next working day. The Entry ID keeps the real time.">
       <ErrorBox error={[add.error, del.error].map((e) => e && errorMessage(e)).find(Boolean) ?? null} />
       <div className="flex flex-wrap gap-2">
-        <Input type="date" className="w-auto" value={v.day} onChange={(e) => setV({ ...v, day: e.target.value })} aria-label="Holiday date" />
+        <Input type="date" className="!w-auto" value={v.day} onChange={(e) => setV({ ...v, day: e.target.value })} aria-label="Holiday date" />
         <Input className="max-w-xs" placeholder="Name, e.g. Diwali" value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} />
         <Button disabled={!v.day || !v.name.trim() || add.isPending} onClick={() => add.mutate()}><Plus size={14} aria-hidden="true" />Add holiday</Button>
       </div>

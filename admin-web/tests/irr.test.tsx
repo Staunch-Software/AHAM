@@ -48,6 +48,8 @@ test('the IRR report shows No. and IRR per period, a dash when there is nothing,
   expect(screen.getAllByText('Number of disbursements')).toHaveLength(3)
   for (const h of ['For the day (TD)', 'Month to date (MTD)', 'Year to date (YTD)']) expect(screen.getByText(h)).toBeInTheDocument()
   expect(screen.getAllByText('Weighted average IRR (%)')).toHaveLength(3)
+  expect(screen.queryByRole('region', { name: 'How the IRR is worked out' })).toBeNull()  // closed by default
+  await userEvent.click(screen.getByRole('button', { name: /Weighted average IRR of Home Loans/ }))
   const how = screen.getByRole('region', { name: 'How the IRR is worked out' })
   expect(how).toHaveTextContent('Weighted average IRR = Σ Transaction IRR ÷ (Σ disbursed amount × average tenure)')
   expect(how).toHaveTextContent("Transaction IRR = disbursed amount × that loan's tenure (months) × ROI")
@@ -85,14 +87,15 @@ test('the report shows one period, or a date range, and the loans of the range w
     return base(url, cfg)
   }
   renderApp('/admin/irr')
-  const show = await screen.findByRole('group', { name: 'Show' })
-  await userEvent.click(within(show).getByRole('button', { name: 'MTD' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Show' }))
+  await userEvent.click(await screen.findByRole('option', { name: 'MTD' }))
   await waitFor(() => expect(calls.filter((c) => c.url === '/irr/report').at(-1)!.cfg.params).toMatchObject({ periods: 'MTD' }))
   expect(await screen.findByText('Home Loan (HL): Month to date (MTD)')).toBeInTheDocument()
   expect(screen.queryByText('For the day (TD)')).toBeNull()
   expect(screen.getByText(/1 disbursement of this month to date is left out/)).toBeInTheDocument()
 
-  await userEvent.click(within(show).getByRole('button', { name: 'Date range' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Show' }))
+  await userEvent.click(await screen.findByRole('option', { name: 'Date range' }))
   // the range starts on the 1st of the as-of month and ends on the as-of date; the as-of date is not used
   await waitFor(() => expect(calls.filter((c) => c.url === '/irr/report').at(-1)!.cfg.params).toMatchObject({ date_from: '2026-11-01', date_to: '2026-11-05' }))
   expect(calls.filter((c) => c.url === '/irr/report').at(-1)!.cfg.params.as_of).toBeUndefined()
@@ -130,8 +133,9 @@ test('upload problems are a table of row, column, value found and problem, with 
   const nav = await screen.findByRole('navigation', { name: 'Main' })
   expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(
     expect.arrayContaining(['IRR report', 'Disbursement register', 'IRR exceptions', 'IRR settings']))
-  // every table on a screen can be exported, the upload history too
-  const history = (await screen.findByText('oct.csv')).closest('table')!.parentElement!.parentElement!  // the table sits in a scroll box beside its export bar
+  // every table on a screen can be exported, the upload history too (its export sits in the card's own header, beside the title)
+  const history = (await screen.findByText('Upload history')).closest('section')!
+  expect(within(history).getByText('oct.csv')).toBeInTheDocument()
   expect(within(history).getByText('Export:')).toBeInTheDocument()
   const file = new File(['x'], 'register.csv', { type: 'text/csv' })
   await userEvent.upload(await screen.findByLabelText('Disbursement register file'), file)

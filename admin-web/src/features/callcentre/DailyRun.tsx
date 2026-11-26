@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRightLeft, Copy, FileSpreadsheet, Play, Save, UserPlus, Wand2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Card, cx, EmptyState, ErrorBox, ExportBar, Input, Note, PageTitle, Select, Skeleton, StatCard, Table, Td } from '../../components/ui'
 import { api, download, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
+import { tableCells } from '../../services/exporting'
 import { useCallers } from '../../services/meta'
 import type { CallRow } from '../../types'
 
@@ -17,6 +18,10 @@ interface PlanCaller { id: string; name: string; absent: boolean; load: number; 
 interface PlanMove { kind: 'entries' | 'branch'; from_id: string; from: string; to_id: string; to: string; branch_id: string; branch: string; count: number; languages: string[] }
 interface DayPlan { day: string; limit: number; branches: PlanBranch[]; callers: PlanCaller[]; moves: PlanMove[] }
 interface Run { id: string; run_date: string; started_at: string; started_by: string; counts: { selection: Record<string, number>; allocated: Record<string, number>; unreturned: number } }
+
+const CALLERS_HEAD = ['Caller', 'Still to call today', 'List / limit', 'Not called within the target (overdue)', 'Calls made today', 'Move today’s list to', '']
+const RUNS_HEAD = ['Run date', 'Started at', 'Started by', 'Entries decided', 'Put on callers’ lists', 'Not done before, offered again']
+const NO_CALLER_HEAD = ['Entry ID', 'Person met', 'Branch', 'List', 'Assign to caller']
 
 const isoToday = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 const isoMinus = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) - n * 86400000).toISOString().slice(0, 10)
@@ -44,6 +49,9 @@ export default function DailyRun() {
   const qc = useQueryClient()
   const { path } = useAuth()
   const [day, setDay] = useState(isoToday())
+  const callersTableRef = useRef<HTMLTableElement>(null)
+  const runsTableRef = useRef<HTMLTableElement>(null)
+  const noCallerTableRef = useRef<HTMLTableElement>(null)
   const { data: callers } = useCallers()
   const days = useQuery({ queryKey: ['caller-days', day], queryFn: async () => (await api.get<Days>('/calls/caller-days', { params: { day } })).data })
   const overview = useQuery({ queryKey: ['calls', 'overview'], queryFn: async () => (await api.get<Overview>('/calls/allocations', { params: { unassigned: true } })).data })
@@ -96,7 +104,7 @@ export default function DailyRun() {
               setDay(e.target.value)
               setMoved(null)
             }}
-            className="w-auto"
+            className="!w-auto"
           />
         }
       >
@@ -250,7 +258,10 @@ export default function DailyRun() {
       </div>
 
       <Card title="Callers" subtitle={`A caller who is off today: move their open list (retries and PRIORITY calls too) to another caller. Call sheet: that caller's list for ${day} in Excel, as the hand-made call sheets, with the tries, answers and lead card recorded so far.`} className="mt-6" flush
-        actions={<Button small variant="secondary" disabled={sheet.isPending} onClick={() => sheet.mutate(undefined)}><FileSpreadsheet size={14} aria-hidden="true" />All call sheets (Excel)</Button>}>
+        actions={<>
+          <Button small variant="secondary" disabled={sheet.isPending} onClick={() => sheet.mutate(undefined)}><FileSpreadsheet size={14} aria-hidden="true" />All call sheets (Excel)</Button>
+          <ExportBar compact name="Callers today" header={CALLERS_HEAD.filter((h) => h !== '')} rows={() => tableCells(callersTableRef.current!, CALLERS_HEAD.map((h) => h !== ''))} />
+        </>}>
         {move.data && <p className="px-5 pt-3 text-sm text-emerald-700" role="status">{move.data.moved} moved.</p>}
         {applyMove.data && <p className="px-5 pt-3 text-sm text-emerald-700" role="status">{applyMove.data.moved} moved.</p>}
         {(plan.data?.moves ?? []).length > 0 && (
@@ -266,7 +277,7 @@ export default function DailyRun() {
             ))}
           </div>
         )}
-        <Table head={['Caller', 'Still to call today', 'List / limit', 'Not called within the target (overdue)', 'Calls made today', 'Move today’s list to', '']} exportName="Callers today">
+        <Table head={CALLERS_HEAD} exportName="Callers today" hideExportBar tableRef={callersTableRef}>
           {overview.data?.callers.map((c) => (
             <tr key={c.id}><Td className="font-medium">{c.name}{!c.active && <span className="ml-2 text-xs text-slate-400">inactive</span>}{loadOf[c.id]?.absent && <span className="ml-2 rounded-full bg-roof-50 px-2 py-0.5 text-[11px] font-semibold text-roof-700">absent today</span>}</Td><Td className="tabular">{c.open}</Td>
               <Td className={cx('tabular', (loadOf[c.id]?.over ?? 0) > 0 && 'font-semibold text-roof-700')}>{loadOf[c.id] ? `${loadOf[c.id]!.load} / ${plan.data!.limit}` : '—'}</Td>
@@ -283,9 +294,12 @@ export default function DailyRun() {
         </Table>
       </Card>
 
-      <Card title="Work with no caller" subtitle="The branch had no caller of the day" className="mt-6" flush>
+      <Card title="Work with no caller" subtitle="The branch had no caller of the day" className="mt-6" flush
+        actions={!!overview.data?.items.length && (
+          <ExportBar compact name="Work with no caller" header={NO_CALLER_HEAD} rows={() => tableCells(noCallerTableRef.current!, NO_CALLER_HEAD.map(() => true))} />
+        )}>
         {!overview.data?.items.length ? <EmptyState icon={<UserPlus size={20} />} title="Everything is on a caller's list." /> : (
-          <Table head={['Entry ID', 'Person met', 'Branch', 'List', 'Assign to caller']} exportName="Work with no caller">
+          <Table head={NO_CALLER_HEAD} hideExportBar tableRef={noCallerTableRef}>
             {overview.data.items.map((r) => (
               <tr key={r.allocation_id}>
                 <Td><Link className="font-mono text-xs font-semibold text-brand-700 hover:underline" to={path(`entries/${r.id}`)}>{r.entry_code}</Link></Td>
@@ -298,10 +312,13 @@ export default function DailyRun() {
         )}
       </Card>
 
-      <Card title="Recent runs" className="mt-6" flush>
+      <Card title="Recent runs" className="mt-6" flush
+        actions={runs.data?.some((r) => did(r.counts)) && (
+          <ExportBar compact name="Daily runs" header={RUNS_HEAD} rows={() => tableCells(runsTableRef.current!, RUNS_HEAD.map(() => true))} />
+        )}>
         {runs.data?.some((r) => did(r.counts)) ? (
           <>
-            <Table head={['Run date', 'Started at', 'Started by', 'Entries decided', 'Put on callers’ lists', 'Not done before, offered again']} exportName="Daily runs">
+            <Table head={RUNS_HEAD} exportName="Daily runs" hideExportBar tableRef={runsTableRef}>
               {runs.data.filter((r) => did(r.counts)).map((r) => (
                 <tr key={r.id}><Td>{r.run_date}</Td><Td>{new Date(r.started_at).toLocaleString()}</Td><Td>{r.started_by}</Td>
                   <Td className="text-xs">{Object.entries(r.counts.selection ?? {}).map(([k, v]) => `${v} ${decision(k)}`).join(' · ') || '—'}</Td>

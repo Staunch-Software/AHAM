@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Camera, Flag, History, IdCard, MapPin, PhoneCall, TriangleAlert } from 'lucide-react'
-import { ReactNode, useState } from 'react'
+import { ReactNode, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Button, Card, ErrorBox, KV, Loading, RagBadge, StatusText, Table, Td } from '../../components/ui'
+import { Button, Card, ErrorBox, ExportBar, KV, Loading, RagBadge, StatusText, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
+import { tableCells } from '../../services/exporting'
 import { useAuth } from '../../services/auth'
 import { accuracyLabel, fmtDevice, fmtServer, mapUrl, validCoords } from '../../services/format'
 import type { EntryDetail as Detail } from '../../types'
@@ -12,6 +13,7 @@ import { AnswerDialog } from '../branch/AnswerDialog'
 import { CorrectNumberDialog, CorrectSoDialog, TrackerDialog } from './EntryDialogs'
 
 const LEAD_ACTIONS = ['Visit customer', 'Collect documents', 'Follow up lead']
+const CALLS_HEAD = ['Call date', 'Time slot', 'Call outcome', 'Status after this call', 'Caller', 'Next date']
 const yes = (b: boolean) => (b ? 'Yes' : 'No')
 /** A history value: lead card changes come as {field: [old, new]}. */
 const detailText = (v: unknown): string => {
@@ -43,6 +45,7 @@ export default function EntryDetail() {
   const { can, path, me, portal } = useAuth()
   const nav = useNavigate()
   const [dialog, setDialog] = useState<'number' | 'so' | 'tracker' | 'answer' | null>(null)
+  const callsTableRef = useRef<HTMLTableElement>(null)
   const { data: e, isLoading, error } = useQuery({ queryKey: ['entry', id], queryFn: async () => (await api.get<Detail>(`/entries/${id}`)).data })
   if (isLoading) return <Loading />
   if (error || !e) return <ErrorBox error={error ? errorMessage(error) : 'Not found'} />
@@ -123,9 +126,14 @@ export default function EntryDetail() {
         </Card>
       )}
 
-      <Card title="Calls" className="mt-6" flush actions={<span className="text-xs text-slate-500">Cycle {e.call_cycle} · {e.unanswered_count} unanswered · first caller {e.first_caller ?? '—'}</span>}>
+      <Card title="Calls" className="mt-6" flush actions={<div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-slate-500">Cycle {e.call_cycle} · {e.unanswered_count} unanswered · first caller {e.first_caller ?? '—'}</span>
+        {e.attempts.length > 0 && (
+          <ExportBar compact name="Calls" header={CALLS_HEAD} rows={() => tableCells(callsTableRef.current!, CALLS_HEAD.map(() => true))} />
+        )}
+      </div>}>
         {e.attempts.length === 0 ? <p className="px-5 pb-5 text-sm text-slate-500">{e.on_list_of.length ? `On the list of ${e.on_list_of.map((a) => a.caller ?? 'no caller yet').join(', ')} (${e.on_list_of[0]!.kind}).` : 'Not called yet.'}</p> : (
-          <Table head={['Call date', 'Time slot', 'Call outcome', 'Status after this call', 'Caller', 'Next date']} exportName="Calls">
+          <Table head={CALLS_HEAD} tableRef={callsTableRef}>
             {e.attempts.map((a) => (
               <tr key={a.id}><Td className="whitespace-nowrap">{a.call_date}{a.cycle > 1 && <span className="ml-1 text-xs text-slate-400">(cycle {a.cycle})</span>}</Td><Td>{a.slot}</Td><Td>{a.outcome}</Td>
                 <Td>{a.row_status}</Td><Td>{a.caller}</Td><Td>{a.next_date ?? (a.answers?.next_date as string) ?? '—'}</Td></tr>

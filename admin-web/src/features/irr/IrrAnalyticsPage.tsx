@@ -305,7 +305,7 @@ export default function IrrAnalyticsPage() {
                 aria-label="As of date"
                 value={asOf || mData?.as_of || ''}
                 onChange={(e) => setAsOf(e.target.value)}
-                className="w-auto py-1 text-xs"
+                className="!w-auto !py-1 !text-xs"
               />
             </div>
 

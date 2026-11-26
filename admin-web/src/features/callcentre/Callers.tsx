@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BarChart2, Check, ChevronDown, Languages } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Button, Card, cx, EmptyState, ErrorBox, Input, Note, PageTitle, Select, Skeleton, Table, Td } from '../../components/ui'
+import { Button, Card, cx, EmptyState, ErrorBox, ExportBar, Input, Note, PageTitle, Select, Skeleton, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
 import { CallerAnalyticsModal } from './CallerAnalyticsModal'
 
@@ -232,17 +232,19 @@ export default function Callers() {
   return (
     <>
       <PageTitle subtitle="The languages each caller speaks and each branch needs, the usual caller of each branch, and who is absent. Auto-assign on Daily run & allocation works from these."
-        actions={<Input type="date" aria-label="Day" value={day} onChange={(e) => setDay(e.target.value)} className="w-auto" />}>
+        actions={<Input type="date" aria-label="Day" value={day} onChange={(e) => setDay(e.target.value)} className="!w-auto" />}>
         Callers
       </PageTitle>
       <ErrorBox error={err} />
       {isLoading ? <Skeleton className="h-64" /> : (
         <>
-          <Card flush title="Callers" subtitle={`Absent and the list are for ${day}. The list counts new entries, retries, PRIORITY and follow-ups against the daily limit of ${data?.limit ?? '—'} (Settings).`}>
+          <Card flush title="Callers" subtitle={`Absent and the list are for ${day}. The list counts new entries, retries, PRIORITY and follow-ups against the daily limit of ${data?.limit ?? '—'} (Settings).`}
+            actions={callers.length > 0 && (
+              <ExportBar compact name={`Callers ${day}`} header={['Caller', 'Emp ID', 'Languages', 'Usual branches', 'Absent', 'List', 'Limit', 'Calls made']}
+                rows={async () => callers.map((c) => [c.name, c.employee_code, c.languages.join(', '), c.usual_branches.join(', '), c.absent ? 'Yes' : 'No', c.load, data!.limit, c.calls_made])} />
+            )}>
             {!callers.length ? <EmptyState icon={<Languages size={20} />} title="No callers yet. HR adds them under Users & roles." /> : (
-              <Table head={['Caller', 'Languages', 'Usual branches', `On ${day}`, 'List / limit', 'Calls made', 'Analytics']} exportName={`Callers ${day}`}
-                exportHeader={['Caller', 'Emp ID', 'Languages', 'Usual branches', 'Absent', 'List', 'Limit', 'Calls made']}
-                exportAll={async () => callers.map((c) => [c.name, c.employee_code, c.languages.join(', '), c.usual_branches.join(', '), c.absent ? 'Yes' : 'No', c.load, data!.limit, c.calls_made])}>
+              <Table head={['Caller', 'Languages', 'Usual branches', `On ${day}`, 'List / limit', 'Calls made', 'Analytics']}>
                 {callers.map((c) => (
                   <tr key={c.id} className={cx(!c.active && 'opacity-60')}>
                     <Td><p className="font-medium text-slate-800">{c.name}</p><p className="text-xs text-slate-400">{c.employee_code}{!c.active && ' · inactive'}</p></Td>
@@ -280,10 +282,10 @@ export default function Callers() {
             )}
           </Card>
 
-          <Card flush className="mt-6" title="Branches" subtitle="A caller can take a branch when they speak one of its languages. The usual caller takes it each day unless absent.">
-            <Table head={['Region', 'Branch', 'Languages', 'Usual caller']} exportName="Branch languages and usual callers"
-              exportHeader={['Region', 'Branch', 'Languages', 'Usual caller']}
-              exportAll={async () => (data?.branches ?? []).map((b) => [b.region ?? '', b.branch, b.languages.join(', '), b.usual_caller ?? ''])}>
+          <Card flush className="mt-6" title="Branches" subtitle="A caller can take a branch when they speak one of its languages. The usual caller takes it each day unless absent."
+            actions={<ExportBar compact name="Branch languages and usual callers" header={['Region', 'Branch', 'Languages', 'Usual caller']}
+              rows={async () => (data?.branches ?? []).map((b) => [b.region ?? '', b.branch, b.languages.join(', '), b.usual_caller ?? ''])} />}>
+            <Table head={['Region', 'Branch', 'Languages', 'Usual caller']}>
               {(data?.branches ?? []).map((b) => {
                 const usual = callers.find((c) => c.id === b.usual_caller_id)
                 const wrong = usual && usual.languages.length > 0 && !speaks(usual.languages, b.languages)

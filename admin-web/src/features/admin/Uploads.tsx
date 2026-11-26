@@ -59,14 +59,19 @@ function UploadCard({ k }: { k: (typeof KINDS)[number] }) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'temporary_passwords.csv'; a.click()
   }
   return (
-    <Card title={k.title} subtitle={k.hint} actions={<Button variant="ghost" small onClick={() => download(`/imports/templates/${k.template}`, {}, `${k.template}_template.csv`)}><Download size={14} aria-hidden="true" />Template</Button>}>
-      <div className="flex flex-wrap items-center gap-3">
+    <Card>
+      <div className="flex flex-nowrap items-center gap-3 overflow-x-auto">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-semibold text-brand-900">{k.title}</h2>
+          <p className="mt-0.5 text-xs text-slate-500">{k.hint}</p>
+        </div>
         <input ref={input} type="file" accept=".csv,.xlsx" className="sr-only" aria-label={`${k.title} file`} onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null) }} />
-        <Button variant="secondary" onClick={() => input.current?.click()}><FileSpreadsheet size={16} aria-hidden="true" />{file ? file.name : 'Choose .csv or .xlsx'}</Button>
-        {k.kind === 'roster' && <Toggle label="Give new people a temporary password" checked={issue} onChange={setIssue} />}
-        <div className="ml-auto flex gap-2">
+        <div className="flex shrink-0 items-center gap-2">
+          {k.kind === 'roster' && <Toggle label="Give new people a temporary password" checked={issue} onChange={setIssue} />}
+          <Button variant="secondary" onClick={() => input.current?.click()}><FileSpreadsheet size={16} aria-hidden="true" />{file ? file.name : 'Choose .csv or .xlsx'}</Button>
           <Button variant="secondary" disabled={!file || send.isPending} onClick={() => send.mutate(true)}>Check first</Button>
           <Button disabled={!file || send.isPending} onClick={() => send.mutate(false)}><Upload size={16} aria-hidden="true" />Upload</Button>
+          <Button variant="ghost" small onClick={() => download(`/imports/templates/${k.template}`, {}, `${k.template}_template.csv`)}><Download size={14} aria-hidden="true" />Template</Button>
         </div>
       </div>
       <div className="mt-4"><ErrorBox error={send.error ? errorMessage(send.error) : null} /></div>

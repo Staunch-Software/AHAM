@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { BarChart3, Percent, TriangleAlert } from 'lucide-react'
+import { BarChart3, ChevronRight, Percent, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Card, cx, Dialog, EmptyState, ErrorBox, Input, Note, PageTitle, Pager, Segmented, Select, Skeleton, Table, Td } from '../../components/ui'
@@ -127,6 +127,7 @@ export default function IrrReport() {
   const [detail, setDetail] = useState<DetailTarget | null>(null)
   const [show, setShow] = useState<Show>('ALL')
   const [range, setRange] = useState({ from: '', to: '' })
+  const [explainOpen, setExplainOpen] = useState(false)
   const filters = { as_of: asOf || undefined, level, region_id: region || undefined, branch_id: branch || undefined }
   const isRange = tab === 'periods' && show === 'RANGE'
   const rangeReady = !!range.from && !!range.to
@@ -168,7 +169,12 @@ export default function IrrReport() {
   return (
     <>
       <PageTitle
-        subtitle="Weighted average IRR of Home Loans (HL) and Non-Home Loans / LAP (NHL), from the Disbursement Register."
+        subtitle={
+          <button type="button" className="inline-flex items-center gap-1 text-left hover:text-brand-700" aria-expanded={explainOpen} onClick={() => setExplainOpen((o) => !o)}>
+            <ChevronRight size={14} className={cx('shrink-0 transition-transform', explainOpen && 'rotate-90')} aria-hidden="true" />
+            Weighted average IRR of Home Loans (HL) and Non-Home Loans / LAP (NHL), from the Disbursement Register.
+          </button>
+        }
         actions={
           <>
             {!isRange && (
@@ -179,7 +185,7 @@ export default function IrrReport() {
                   aria-label="As of date"
                   value={day}
                   onChange={(e) => setAsOf(e.target.value)}
-                  className="w-auto"
+                  className="!w-auto"
                 />
               </label>
             )}
@@ -220,35 +226,46 @@ export default function IrrReport() {
         IRR report
       </PageTitle>
 
-      <section aria-label="How the IRR is worked out" className="mb-4 rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-800">
-        <p className="font-semibold text-brand-900">Weighted average IRR = Σ Transaction IRR ÷ (Σ disbursed amount × average tenure)</p>
-        <ul className="mt-2 grid list-disc gap-x-8 gap-y-1 pl-5 md:grid-cols-2">
-          <li><strong>Transaction IRR</strong> = disbursed amount × that loan's tenure (months) × ROI</li>
-          <li><strong>Average tenure</strong> = plain average of the tenures in the period</li>
-          <li><strong>No.</strong> = number of disbursements (a loan paid in two tranches counts twice)</li>
-          <li><strong>HL and NHL</strong> are always worked out separately</li>
-          <li><strong>MTD and YTD</strong> use every disbursement of the period, never an average of daily, branch or region figures</li>
-          <li><strong>Cancelled or reversed</strong> disbursements are left out</li>
-        </ul>
-        <p className="mt-2 text-xs text-brand-700">Click a row to see the loans behind it.</p>
-      </section>
+      {explainOpen && (
+        <section aria-label="How the IRR is worked out" className="mb-4 rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-800">
+          <p className="font-semibold text-brand-900">Weighted average IRR = Σ Transaction IRR ÷ (Σ disbursed amount × average tenure)</p>
+          <ul className="mt-2 grid list-disc gap-x-8 gap-y-1 pl-5 md:grid-cols-2">
+            <li><strong>Transaction IRR</strong> = disbursed amount × that loan's tenure (months) × ROI</li>
+            <li><strong>Average tenure</strong> = plain average of the tenures in the period</li>
+            <li><strong>No.</strong> = number of disbursements (a loan paid in two tranches counts twice)</li>
+            <li><strong>HL and NHL</strong> are always worked out separately</li>
+            <li><strong>MTD and YTD</strong> use every disbursement of the period, never an average of daily, branch or region figures</li>
+            <li><strong>Cancelled or reversed</strong> disbursements are left out</li>
+          </ul>
+          <p className="mt-2 text-xs text-brand-700">Click a row to see the loans behind it.</p>
+        </section>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Segmented label="Report layout" value={tab} onChange={setTab} options={[{ value: 'periods', label: 'TD / MTD / YTD' }, { value: 'month', label: 'HL & NHL month to date' }]} />
-        {tab === 'periods' && <Segmented label="Product" value={product} onChange={setProduct} options={CLASSES.map((c) => ({ value: c, label: CLASS_LABELS[c] }))} />}
-        <Segmented label="Level" value={level} onChange={setLevel} options={LEVELS} />
+        <Select aria-label="Report layout" className="w-48" value={tab} onChange={(e) => setTab(e.target.value as Tab)}>
+          <option value="periods">TD / MTD / YTD</option>
+          <option value="month">HL & NHL month to date</option>
+        </Select>
+        {tab === 'periods' && (
+          <Select aria-label="Product" className="w-44" value={product} onChange={(e) => setProduct(e.target.value as ProductClass)}>
+            {CLASSES.map((c) => <option key={c} value={c}>{CLASS_LABELS[c]}</option>)}
+          </Select>
+        )}
+        <Select aria-label="Level" className="w-40" value={level} onChange={(e) => setLevel(e.target.value as Level)}>
+          {LEVELS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+        </Select>
+        {tab === 'periods' && (
+          <Select aria-label="Show" className="w-44" value={show} onChange={(e) => pick(e.target.value as Show)}>
+            {SHOW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </Select>
+        )}
+        {isRange && (
+          <>
+            <label className="flex items-center gap-2 text-xs text-slate-500">Disbursed from<Input type="date" aria-label="Disbursed from" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} className="!w-auto" /></label>
+            <label className="flex items-center gap-2 text-xs text-slate-500">to<Input type="date" aria-label="Disbursed to" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} className="!w-auto" /></label>
+          </>
+        )}
       </div>
-      {tab === 'periods' && (
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <Segmented label="Show" value={show} onChange={pick} options={SHOW_OPTIONS} />
-          {isRange && (
-            <>
-              <label className="flex items-center gap-2 text-xs text-slate-500">Disbursed from<Input type="date" aria-label="Disbursed from" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} className="w-auto" /></label>
-              <label className="flex items-center gap-2 text-xs text-slate-500">to<Input type="date" aria-label="Disbursed to" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} className="w-auto" /></label>
-            </>
-          )}
-        </div>
-      )}
 
       <ErrorBox error={current.error ? errorMessage(current.error) : null} />
       {exceptions > 0 && (

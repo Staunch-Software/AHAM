@@ -1,8 +1,9 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Award, BadgeCheck, Clock, IdCard, ListChecks, Target, UserCheck, Users } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Card, EmptyState, ErrorBox, Input, PageTitle, RAG_LABEL, Segmented, Skeleton, StatCard, Table, Td } from '../../components/ui'
+import { Card, EmptyState, ErrorBox, ExportBar, Input, PageTitle, RAG_LABEL, Segmented, Skeleton, StatCard, Table, Td } from '../../components/ui'
+import { tableCells } from '../../services/exporting'
 import { api, errorMessage } from '../../services/api'
 import { useAuth } from '../../services/auth'
 
@@ -44,12 +45,15 @@ export function RagBar({ rag, linkFor }: { rag: Record<string, number>; linkFor?
       <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100" role="img" aria-label="RAG mix">
         {RAG_ORDER.filter((k) => rag[k]).map((k) => <div key={k} className={RAG_BAR[k]} style={{ width: `${(rag[k]! / total) * 100}%` }} />)}
       </div>
-      <ul className="mt-3 grid grid-cols-3 gap-2 text-xs sm:grid-cols-6">
+      <ul className="mt-3.5 grid grid-cols-3 gap-x-6 gap-y-2.5 text-xs">
         {RAG_ORDER.map((k) => {
           const item = (
-            <span className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 transition">
-              <span className={`h-2.5 w-2.5 rounded-full ${RAG_BAR[k]}`} aria-hidden="true" />{RAG_LABEL[k]}
-              <span className="tabular ml-auto font-semibold text-slate-800">{rag[k] ?? 0}</span>
+            <span className="flex items-center justify-between rounded px-1.5 py-1 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">
+              <span className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${RAG_BAR[k]}`} aria-hidden="true" />
+                <span>{RAG_LABEL[k]}</span>
+              </span>
+              <span className="tabular font-semibold text-slate-800">{rag[k] ?? 0}</span>
             </span>
           )
           return (
@@ -87,6 +91,8 @@ export default function Dashboard() {
   // the lead conversion's own range of entry dates (blank: from Takeoff start to today)
   const [convFrom, setConvFrom] = useState('')
   const [convTo, setConvTo] = useState('')
+  const conversionTableRef = useRef<HTMLTableElement>(null)
+  const branchesTableRef = useRef<HTMLTableElement>(null)
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard', period, convFrom, convTo],
     queryFn: async () => (await api.get<Dash>('/dashboard', { params: { period, conv_from: convFrom || undefined, conv_to: convTo || undefined } })).data,
@@ -105,6 +111,9 @@ export default function Dashboard() {
     })
     return path(`entries?${p.toString()}`)
   }
+
+  const conversionHead = ['Region', 'Validated leads', 'Logged in', 'Rejected', 'Open', 'Login %']
+  const branchesHead = ['Branch', 'Region', 'Sales Officers', 'Entries', 'Lead / Prospect entries', 'Validated', 'Logged in', 'Green', 'Amber', 'Red']
 
   return (
     <>
@@ -235,13 +244,16 @@ export default function Dashboard() {
             subtitle={`Takeoff leads validated by the call centre, by region · entries made from ${data.conversion.from ?? data.conversion.since} to ${data.conversion.to ?? 'today'}, whatever the period above`}
             actions={<div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span>Entries from</span>
-              <Input type="date" aria-label="Lead conversion from" className="w-auto py-1 text-xs" value={convFrom || data.conversion.from || ''} min={data.conversion.since} onChange={(e) => setConvFrom(e.target.value)} />
+              <Input type="date" aria-label="Lead conversion from" className="!w-auto !py-1 !text-xs" value={convFrom || data.conversion.from || ''} min={data.conversion.since} onChange={(e) => setConvFrom(e.target.value)} />
               <span>to</span>
-              <Input type="date" aria-label="Lead conversion to" className="w-auto py-1 text-xs" value={convTo || data.conversion.to || ''} onChange={(e) => setConvTo(e.target.value)} />
+              <Input type="date" aria-label="Lead conversion to" className="!w-auto !py-1 !text-xs" value={convTo || data.conversion.to || ''} onChange={(e) => setConvTo(e.target.value)} />
               {(convFrom || convTo) && <button type="button" className="font-semibold text-brand-700 hover:underline" onClick={() => { setConvFrom(''); setConvTo('') }}>All since Takeoff start</button>}
+              {data.conversion.regions.length > 0 && (
+                <ExportBar compact name="Lead conversion" header={conversionHead} rows={() => tableCells(conversionTableRef.current!, conversionHead.map(() => true))} />
+              )}
             </div>}>
             {data.conversion.regions.length === 0 ? <EmptyState icon={<BadgeCheck size={20} />} title="No validated leads yet." /> : (
-              <Table head={['Region', 'Validated leads', 'Logged in', 'Rejected', 'Open', 'Login %']} exportName="Lead conversion">
+              <Table head={conversionHead} tableRef={conversionTableRef}>
                 {data.conversion.regions.map((c) => (
                   <tr key={c.region ?? '—'}>
                     <Td className="font-medium text-slate-900">{c.region ?? '—'}</Td><Td className="tabular">{c.validated}</Td>
@@ -265,9 +277,12 @@ export default function Dashboard() {
             </details>
           </Card>
 
-          <Card title="Branches" className="mt-6" flush>
+          <Card title="Branches" className="mt-6" flush
+            actions={data.branches.length > 0 && (
+              <ExportBar compact name="Branches" header={branchesHead} rows={() => tableCells(branchesTableRef.current!, branchesHead.map(() => true))} />
+            )}>
             {data.branches.length === 0 ? <EmptyState icon={<ListChecks size={20} />} title="No entries in this period." /> : (
-              <Table head={['Branch', 'Region', 'Sales Officers', 'Entries', 'Lead / Prospect entries', 'Validated', 'Logged in', 'Green', 'Amber', 'Red']} exportName="Branches" maxHeight="max-h-[min(480px,60vh)]">
+              <Table head={branchesHead} tableRef={branchesTableRef} maxHeight="max-h-[min(480px,60vh)]">
                 {data.branches.map((b) => (
                   <tr key={b.branch_id} className="hover:bg-slate-50/80 transition">
                     <Td className="font-medium text-slate-900">

@@ -3,6 +3,7 @@ import { CheckCircle2, Download, FileSpreadsheet, TriangleAlert, Upload } from '
 import { useRef, useState } from 'react'
 import { Button, Card, cx, ErrorBox, ExportBar, Input, PageTitle, Select, Table, Td } from '../../components/ui'
 import { api, download, errorMessage } from '../../services/api'
+import { tableCells } from '../../services/exporting'
 import { ERROR_HEADER, errorCells, ExportButtons, fmtDay, fmtIrr, fmtNum, RowError, RowErrors } from './shared'
 
 interface Summary { rows: number; new: number; replaced: number; excluded: number; exceptions: number; errors: number; no_account?: number }
@@ -72,12 +73,17 @@ function UploadCard() {
   )
 }
 
+const HISTORY_HEAD = ['When', 'File', 'By', 'Rows', 'New', 'Replaced', 'Excluded', 'Exceptions', 'Rows with errors']
+
 function History() {
   const history = useQuery({ queryKey: ['irr', 'uploads'], queryFn: async () => (await api.get<Batch[]>('/irr/uploads')).data })
+  const historyTableRef = useRef<HTMLTableElement>(null)
   return (
-    <Card title="Upload history" className="mt-6" flush>
-      <Table head={['When', 'File', 'By', 'Rows', 'New', 'Replaced', 'Excluded', 'Exceptions', 'Rows with errors', '']} maxHeight="max-h-[min(340px,40vh)]"
-        exportName={history.data?.length ? 'IRR upload history' : undefined}>
+    <Card title="Upload history" className="mt-6" flush
+      actions={!!history.data?.length && (
+        <ExportBar compact name="IRR upload history" header={HISTORY_HEAD} rows={() => tableCells(historyTableRef.current!, [...HISTORY_HEAD.map(() => true), false])} />
+      )}>
+      <Table head={[...HISTORY_HEAD, '']} maxHeight="max-h-[min(340px,40vh)]" tableRef={historyTableRef}>
         {history.data?.map((b) => (
           <tr key={b.id}>
             <Td className="whitespace-nowrap">{new Date(b.created_at).toLocaleString()}</Td>
@@ -146,7 +152,7 @@ function Reconciliation() {
           <Table head={['Month', 'Included rows', 'Included amount (₹)', 'Average tenure (months)', 'Denominator: Σ amount × average tenure', 'Numerator: Σ Transaction IRR', 'Weighted average IRR (%)']} exportName="IRR year to date by month">
             {[...data.months, data.year].map((m, i) => (
               <tr key={m.label} className={cx(i === data.months.length && 'bg-slate-50 font-semibold')}>
-                <Td>{m.label}</Td><Td className="tabular text-right">{m.included}</Td><Td className="tabular text-right">{fmtNum(m.amount)}</Td>
+                <Td className="whitespace-nowrap">{m.label}</Td><Td className="tabular text-right">{m.included}</Td><Td className="tabular text-right">{fmtNum(m.amount)}</Td>
                 <Td className="tabular text-right">{fmtNum(m.average_tenure)}</Td><Td className="tabular text-right">{fmtNum(m.denominator)}</Td><Td className="tabular text-right">{fmtNum(m.weighted_roi)}</Td>
                 <Td className="tabular text-right">{fmtIrr(m.irr, data.decimals)}</Td>
               </tr>

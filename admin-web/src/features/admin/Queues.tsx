@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Clock, Shapes } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, Card, Dialog, EmptyState, ErrorBox, Field, Input, PageTitle, Pager, Select, Table, Td } from '../../components/ui'
+import { Button, Card, Dialog, EmptyState, ErrorBox, ExportBar, Field, Input, PageTitle, Pager, Select, Table, Td } from '../../components/ui'
 import { api, errorMessage } from '../../services/api'
 import { allPages } from '../../services/exporting'
 import { useAuth } from '../../services/auth'
@@ -48,19 +48,25 @@ export default function Queues() {
     <>
       <PageTitle subtitle="Wrong-SO corrections are made from the entry page (“Correct SO”).">Review queues</PageTitle>
       <ErrorBox error={[cat.error, time.error].map((e) => e && errorMessage(e)).find(Boolean) ?? null} />
-      <Card title="Category wrong (branch code 2)" flush>
+      <Card title="Category wrong (branch code 2)" flush
+        actions={!!cat.data?.items.length && (
+          <ExportBar compact name="Category to review" header={['Entry ID', 'Person met (mobile number)', 'Category now', 'Sales Officer']}
+            rows={async () => (await allPages<EntryRow>('/monitor/category-review')).map((r) => [r.entry_code, `${r.person_name} · Mobile ${r.phone}`, r.category_label, `${r.so_name} · ${r.branch_name}`])} />
+        )}>
         {!cat.data?.items.length ? <EmptyState icon={<Shapes size={20} />} title="Nothing to review." /> : (
-          <Table head={['Entry ID', 'Person met (mobile number)', 'Category now', 'Sales Officer', '']} exportName="Category to review" maxHeight="max-h-[min(380px,45vh)]"
-            exportAll={async () => (await allPages<EntryRow>('/monitor/category-review')).map((r) => [r.entry_code, `${r.person_name} · Mobile ${r.phone}`, r.category_label, `${r.so_name} · ${r.branch_name}`])}>
+          <Table head={['Entry ID', 'Person met (mobile number)', 'Category now', 'Sales Officer', '']} maxHeight="max-h-[min(380px,45vh)]">
             {cat.data.items.map((r) => <tr key={r.id}><Td>{link(r)}</Td><Td>{r.person_name}<div className="tabular text-xs text-slate-500">Mobile: {r.phone}</div></Td><Td>{r.category_label}</Td><Td>{r.so_name} · {r.branch_name}</Td><Td><Button small onClick={() => setEditing(r)}>Review</Button></Td></tr>)}
           </Table>
         )}
         {!!cat.data?.items.length && <Pager page={catPage} pageSize={100} total={cat.data.total} onChange={setCatPage} />}
       </Card>
-      <Card title="Check the time" subtitle="The phone’s clock was ahead of the server, or had been set back since the phone last reached the server" className="mt-6" flush>
+      <Card title="Check the time" subtitle="The phone’s clock was ahead of the server, or had been set back since the phone last reached the server" className="mt-6" flush
+        actions={!!time.data?.items.length && (
+          <ExportBar compact name="Entries to check the time" header={['Entry ID', 'Sales Officer', 'Time on the phone’s clock', 'Received by the server at']}
+            rows={async () => (await allPages<EntryRow>('/monitor/time-flags')).map((r) => [r.entry_code, r.so_name, fmtServer(r.submitted_at_device), fmtServer(r.received_at_server)])} />
+        )}>
         {!time.data?.items.length ? <EmptyState icon={<Clock size={20} />} title="No entries with a suspicious time." /> : (
-          <Table head={['Entry ID', 'Sales Officer', 'Time on the phone’s clock', 'Received by the server at']} exportName="Entries to check the time" maxHeight="max-h-[min(380px,45vh)]"
-            exportAll={async () => (await allPages<EntryRow>('/monitor/time-flags')).map((r) => [r.entry_code, r.so_name, fmtServer(r.submitted_at_device), fmtServer(r.received_at_server)])}>
+          <Table head={['Entry ID', 'Sales Officer', 'Time on the phone’s clock', 'Received by the server at']} maxHeight="max-h-[min(380px,45vh)]">
             {time.data.items.map((r) => <tr key={r.id}><Td>{link(r)}</Td><Td>{r.so_name}</Td><Td>{fmtServer(r.submitted_at_device)}</Td><Td>{fmtServer(r.received_at_server)}</Td></tr>)}
           </Table>
         )}
